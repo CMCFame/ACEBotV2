@@ -43,59 +43,74 @@ class ChatUI:
                     )
 
                 # EXAMPLE BOX
-                elif content.strip().startswith("Example:") or "*Example:" in content:
+                elif "*Example:" in content or content.strip().startswith("Example:"):
+                    # Extract example and question text
                     if "*Example:" in content:
-                        parts = content.split("*Example:")
-                        example_text = parts[1].split("*")[0].strip()
-                        
-                        # Extract the question part that follows the example
-                        question_part = ""
-                        if len(parts) > 1 and "To continue with our question" in parts[1]:
-                            question_parts = parts[1].split("To continue with our question")
-                            if len(question_parts) > 1:
-                                question_part = question_parts[1].strip()
+                        example_parts = content.split("*Example:")
+                        if len(example_parts) > 1:
+                            example_text = example_parts[1].split("*")[0].strip()
+                            remainder = example_parts[1].split("*", 1)[1] if len(example_parts[1].split("*")) > 1 else ""
+                            
+                            if "To continue with our question" in remainder:
+                                question_text = remainder.split("To continue with our question", 1)[1].strip()
+                            else:
+                                question_text = remainder.strip()
                     else:
-                        parts = content.strip().split("Example:")
-                        example_text = parts[1].strip() if len(parts) > 1 else ""
-                        question_part = ""
-                    
-                    # Display example and question as a SINGLE message block
+                        example_parts = content.split("Example:", 1)
+                        example_text = example_parts[1].strip() if len(example_parts) > 1 else ""
+                        question_text = ""
+
+                    # Only display the example box, don't repeat the question separately                    
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
                             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
                             <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
                               <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_text}</i></p>
                             </div>
-                            {f'<p style="margin: 10px 0 0 0; font-weight: bold;">{question_part}</p>' if question_part else ''}
+                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_text}</p>' if question_text else ''}
                           </div>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-                # REGULAR ASSISTANT MESSAGE - DETECT QUESTION PART BUT SHOW AS SINGLE MESSAGE
+                # REGULAR ASSISTANT MESSAGE
                 else:
-                    # Find the last sentence with a question mark - that's likely the actual question
-                    sentences = content.split(". ")
-                    question_part = ""
-                    explanation_part = content
+                    # Highlight questions within the message by bolding text that ends with '?'
+                    # But don't create separate message blocks
+                    parts = []
+                    current_part = ""
+                    for sentence in content.split(". "):
+                        if sentence.strip().endswith("?"):
+                            # This is a question sentence - add it with formatting
+                            if current_part:
+                                parts.append(f"<p style='margin: 5px 0;'>{current_part}</p>")
+                                current_part = ""
+                            parts.append(f"<p style='margin: 5px 0; font-weight: bold; color: #198754;'>{sentence.strip()}.</p>")
+                        else:
+                            # This is a regular sentence - add to current part
+                            if current_part:
+                                current_part += ". " + sentence.strip()
+                            else:
+                                current_part = sentence.strip()
                     
-                    for sentence in reversed(sentences):
-                        if "?" in sentence:
-                            question_part = sentence.strip() + "?"
-                            explanation_part = content.replace(question_part, "").strip()
-                            break
+                    # Add any remaining text
+                    if current_part:
+                        parts.append(f"<p style='margin: 5px 0;'>{current_part}</p>")
                     
-                    # Display as a single message with the question highlighted within it
+                    # Join all parts and display as one message
+                    formatted_content = "".join(parts)
+                    
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 10px;">
                           <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
                             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            {f'<p style="margin: 10px 0 0 0;">{explanation_part}</p>' if explanation_part else ''}
-                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #198754;">{question_part}</p>' if question_part else ''}
+                            <div style="margin-top: 5px;">
+                              {formatted_content}
+                            </div>
                           </div>
                         </div>
                         """,
