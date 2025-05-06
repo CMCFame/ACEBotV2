@@ -47,45 +47,35 @@ class ChatUI:
                     if "*Example:" in content:
                         parts = content.split("*Example:")
                         example_text = parts[1].split("*")[0].strip()
-                        # Find the question part after the example
+                        
+                        # Extract the question part that follows the example
+                        question_part = ""
                         if len(parts) > 1 and "To continue with our question" in parts[1]:
                             question_parts = parts[1].split("To continue with our question")
                             if len(question_parts) > 1:
-                                question_text = question_parts[1].strip()
-                            else:
-                                question_text = ""
-                        else:
-                            question_text = ""
+                                question_part = question_parts[1].strip()
                     else:
                         parts = content.strip().split("Example:")
                         example_text = parts[1].strip() if len(parts) > 1 else ""
-                        question_text = ""
-                        
+                        question_part = ""
+                    
+                    # Display example and question as a SINGLE message block
                     st.markdown(
                         f"""
-                        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #ffc107;">
-                          <p style="margin: 0; color: #333;"><strong>📝 Example:</strong></p>
-                          <p style="margin: 10px 0 0 0; font-style: italic;">{example_text}</p>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
+                              <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_text}</i></p>
+                            </div>
+                            {f'<p style="margin: 10px 0 0 0; font-weight: bold;">{question_part}</p>' if question_part else ''}
+                          </div>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
-                    
-                    # Display the question separately if present
-                    if question_text:
-                        st.markdown(
-                            f"""
-                            <div style="display: flex; margin-bottom: 10px;">
-                              <div style="background-color: #d1e7dd; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #198754;">
-                                <p style="margin: 0; color: #333;"><strong>Question:</strong></p>
-                                <p style="margin: 0; white-space: pre-wrap; font-weight: bold;">{question_text}</p>
-                              </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
 
-                # REGULAR ASSISTANT MESSAGE - DETECT QUESTION PART
+                # REGULAR ASSISTANT MESSAGE - DETECT QUESTION PART BUT SHOW AS SINGLE MESSAGE
                 else:
                     # Find the last sentence with a question mark - that's likely the actual question
                     sentences = content.split(". ")
@@ -98,46 +88,19 @@ class ChatUI:
                             explanation_part = content.replace(question_part, "").strip()
                             break
                     
-                    # Display explanation if present
-                    if explanation_part and question_part:
-                        st.markdown(
-                            f"""
-                            <div style="display: flex; margin-bottom: 10px;">
-                              <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                                <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                                <p style="margin: 0; white-space: pre-wrap;">{explanation_part}</p>
-                              </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                    
-                    # Display question with special styling
-                    if question_part:
-                        st.markdown(
-                            f"""
-                            <div style="display: flex; margin-bottom: 10px;">
-                              <div style="background-color: #d1e7dd; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #198754;">
-                                <p style="margin: 0; color: #333;"><strong>Question:</strong></p>
-                                <p style="margin: 0; white-space: pre-wrap; font-weight: bold;">{question_part}</p>
-                              </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                    # If no question detected, display the entire message as normal
-                    elif not question_part:
-                        st.markdown(
-                            f"""
-                            <div style="display: flex; margin-bottom: 10px;">
-                              <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                                <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                                <p style="margin: 0; white-space: pre-wrap;">{content}</p>
-                              </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
+                    # Display as a single message with the question highlighted within it
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            {f'<p style="margin: 10px 0 0 0;">{explanation_part}</p>' if explanation_part else ''}
+                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #198754;">{question_part}</p>' if question_part else ''}
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
