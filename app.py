@@ -1,21 +1,7 @@
 # app.py
+# IMPORTANT: set_page_config must be the very first Streamlit command!
 import streamlit as st
-import os
-import json
-from datetime import datetime
 
-# Import modules
-from modules.session import SessionManager
-from modules.ai_service import AIService
-from modules.topic_tracker import TopicTracker
-from modules.chat_ui import ChatUI
-from modules.summary import SummaryGenerator
-from modules.export import ExportService
-from modules.email_service import EmailService
-from utils.helpers import load_css, apply_css, load_instructions, load_questions
-from config import COOKIE_KEYS
-
-# Page config
 st.set_page_config(
     page_title="ACE Questionnaire",
     page_icon="✅",
@@ -23,7 +9,35 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize services
+# Now we can import other dependencies
+import os
+import json
+from datetime import datetime
+
+# First check if we have cookies manager
+cookies_available = False
+try:
+    from streamlit_cookies_manager import EncryptedCookieManager
+    cookies_available = True
+except ImportError:
+    st.warning("streamlit-cookies-manager is not installed. Session persistence will be limited to file-based storage.")
+
+# Continue with other imports
+try:
+    from modules.session import SessionManager
+    from modules.ai_service import AIService
+    from modules.topic_tracker import TopicTracker
+    from modules.chat_ui import ChatUI
+    from modules.summary import SummaryGenerator
+    from modules.export import ExportService
+    from modules.email_service import EmailService
+    from utils.helpers import load_css, apply_css, load_instructions, load_questions
+    from config import COOKIE_KEYS
+except ImportError as e:
+    st.error(f"Import error: {e}. Please check that all required modules are installed.")
+    st.stop()
+
+# Initialize services - using st.cache_resource instead of st.cache
 @st.cache_resource
 def init_services():
     """Initialize the application services."""
@@ -43,7 +57,6 @@ def init_services():
         "summary_generator": summary_generator,
         "export_service": export_service,
         "email_service": email_service
-    }
 
 services = init_services()
 
