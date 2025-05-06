@@ -1,5 +1,6 @@
 # modules/chat_ui.py
 import streamlit as st
+from datetime import datetime
 
 class ChatUI:
     def __init__(self):
@@ -33,10 +34,10 @@ class ChatUI:
                     help_text = content.replace("I need help with this question", "").strip()
                     st.markdown(
                         f"""
-                        <div class="ai-help">
-                          <p style="margin: 0;"><strong>Help:</strong> {help_text}</p>
+                        <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
+                          <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
+                          <p style="margin: 10px 0 0 0;">{help_text}</p>
                         </div>
-                        <br>
                         """,
                         unsafe_allow_html=True
                     )
@@ -44,33 +45,99 @@ class ChatUI:
                 # EXAMPLE BOX
                 elif content.strip().startswith("Example:") or "*Example:" in content:
                     if "*Example:" in content:
-                        example_text = content.split("*Example:")[1].split("*")[0].strip()
+                        parts = content.split("*Example:")
+                        example_text = parts[1].split("*")[0].strip()
+                        # Find the question part after the example
+                        if len(parts) > 1 and "To continue with our question" in parts[1]:
+                            question_parts = parts[1].split("To continue with our question")
+                            if len(question_parts) > 1:
+                                question_text = question_parts[1].strip()
+                            else:
+                                question_text = ""
+                        else:
+                            question_text = ""
                     else:
-                        example_text = content.strip()[len("Example:"):].strip()
+                        parts = content.strip().split("Example:")
+                        example_text = parts[1].strip() if len(parts) > 1 else ""
+                        question_text = ""
                         
                     st.markdown(
                         f"""
-                        <div class="ai-example">
-                          <p style="margin: 0;"><strong>Example:</strong> {example_text}</p>
+                        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #ffc107;">
+                          <p style="margin: 0; color: #333;"><strong>📝 Example:</strong></p>
+                          <p style="margin: 10px 0 0 0; font-style: italic;">{example_text}</p>
                         </div>
-                        <br>
                         """,
                         unsafe_allow_html=True
                     )
+                    
+                    # Display the question separately if present
+                    if question_text:
+                        st.markdown(
+                            f"""
+                            <div style="display: flex; margin-bottom: 10px;">
+                              <div style="background-color: #d1e7dd; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #198754;">
+                                <p style="margin: 0; color: #333;"><strong>Question:</strong></p>
+                                <p style="margin: 0; white-space: pre-wrap; font-weight: bold;">{question_text}</p>
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
-                # REGULAR ASSISTANT MESSAGE
+                # REGULAR ASSISTANT MESSAGE - DETECT QUESTION PART
                 else:
-                    st.markdown(
-                        f"""
-                        <div style="display: flex; margin-bottom: 10px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <p style="margin: 0; white-space: pre-wrap;">{content}</p>
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    # Find the last sentence with a question mark - that's likely the actual question
+                    sentences = content.split(". ")
+                    question_part = ""
+                    explanation_part = content
+                    
+                    for sentence in reversed(sentences):
+                        if "?" in sentence:
+                            question_part = sentence.strip() + "?"
+                            explanation_part = content.replace(question_part, "").strip()
+                            break
+                    
+                    # Display explanation if present
+                    if explanation_part and question_part:
+                        st.markdown(
+                            f"""
+                            <div style="display: flex; margin-bottom: 10px;">
+                              <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                                <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                                <p style="margin: 0; white-space: pre-wrap;">{explanation_part}</p>
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                    
+                    # Display question with special styling
+                    if question_part:
+                        st.markdown(
+                            f"""
+                            <div style="display: flex; margin-bottom: 10px;">
+                              <div style="background-color: #d1e7dd; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #198754;">
+                                <p style="margin: 0; color: #333;"><strong>Question:</strong></p>
+                                <p style="margin: 0; white-space: pre-wrap; font-weight: bold;">{question_part}</p>
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                    # If no question detected, display the entire message as normal
+                    elif not question_part:
+                        st.markdown(
+                            f"""
+                            <div style="display: flex; margin-bottom: 10px;">
+                              <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                                <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                                <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
@@ -145,7 +212,7 @@ class ChatUI:
             st.text_area("Summary", summary_text, height=300)
             
             # Provide download options
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 # Generate CSV for download
@@ -164,6 +231,18 @@ class ChatUI:
                     data=summary_text,
                     file_name=f"ace_questionnaire_summary_{user_info['company']}_{datetime.now().strftime('%Y%m%d')}.txt",
                     mime="text/plain"
+                )
+                
+            with col3:
+                # Download full progress report
+                from modules.summary import SummaryGenerator
+                summary_gen = SummaryGenerator()
+                progress_dashboard = summary_gen.generate_progress_dashboard()
+                st.download_button(
+                    label="📊 Download Full Report",
+                    data=progress_dashboard,
+                    file_name=f"ace_complete_report_{user_info['company']}_{datetime.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown"
                 )
         else:
             # Provide a brief instruction and the finalize button

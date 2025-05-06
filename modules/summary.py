@@ -264,3 +264,77 @@ class SummaryGenerator:
                 current_question = ""  # Reset current question
         
         return responses
+    
+    def generate_progress_dashboard(self):
+        """Generate a comprehensive dashboard of all questions and answers."""
+        # Get all responses
+        responses = self.get_responses_as_list()
+        
+        # Also extract responses from chat history (more thorough approach)
+        chat_responses = self._extract_responses_from_chat()
+        
+        # Merge the two sets of responses, prioritizing explicit responses
+        all_responses = {}
+        for question, answer in chat_responses:
+            all_responses[question] = answer
+            
+        for question, answer in responses:
+            all_responses[question] = answer
+        
+        # Format as markdown dashboard
+        dashboard = "# ACE Questionnaire Progress\n\n"
+        dashboard += f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        if st.session_state.user_info["name"] or st.session_state.user_info["company"]:
+            dashboard += f"## User Information\n"
+            if st.session_state.user_info["name"]:
+                dashboard += f"**Name:** {st.session_state.user_info['name']}\n"
+            if st.session_state.user_info["company"]:
+                dashboard += f"**Company:** {st.session_state.user_info['company']}\n"
+            dashboard += "\n"
+        
+        # Show progress by topic
+        dashboard += "## Progress by Topic\n\n"
+        
+        for topic, display_name in TOPIC_AREAS.items():
+            is_covered = st.session_state.topic_areas_covered.get(topic, False)
+            status = "✅ Completed" if is_covered else "❌ Not Covered"
+            dashboard += f"**{display_name}**: {status}\n"
+        
+        dashboard += "\n## All Questions and Answers\n\n"
+        
+        # Add all questions and answers
+        for i, question in enumerate(st.session_state.questions):
+            if question in all_responses:
+                dashboard += f"### Q{i+1}: {question}\n\n"
+                dashboard += f"{all_responses[question]}\n\n"
+            else:
+                dashboard += f"### Q{i+1}: {question}\n\n"
+                dashboard += f"*No answer provided yet*\n\n"
+        
+        return dashboard
+
+    def _extract_responses_from_chat(self):
+        """Extract all question-answer pairs from chat history."""
+        pairs = []
+        current_question = ""
+        
+        # Process all messages
+        for i in range(len(st.session_state.visible_messages)):
+            msg = st.session_state.visible_messages[i]
+            
+            # Find questions from assistant
+            if msg["role"] == "assistant":
+                # Extract questions - look for sentences ending with question marks
+                sentences = msg["content"].split(". ")
+                for sentence in sentences:
+                    if "?" in sentence and not sentence.startswith("*Example:"):
+                        current_question = sentence.strip()
+            
+            # Find answers from user (but ignore example requests)
+            elif msg["role"] == "user" and current_question and i > 0:
+                if msg["content"].lower().strip() not in ["example", "can you show me an example?", "show example"]:
+                    pairs.append((current_question, msg["content"]))
+                    current_question = ""  # Reset
+        
+        return pairs

@@ -128,6 +128,32 @@ def add_sidebar_ui():
 
         st.markdown("---")
         
+        # Progress dashboard button
+if st.button("📊 View Full Progress", key="view_progress"):
+    dashboard = services["summary_generator"].generate_progress_dashboard()
+    st.session_state.show_dashboard = True
+    st.session_state.dashboard_content = dashboard
+    st.rerun()
+
+# Display dashboard if requested
+if st.session_state.get("show_dashboard", False):
+    with st.expander("Progress Dashboard", expanded=True):
+        st.markdown(st.session_state.dashboard_content)
+        
+        # Add download button
+        st.download_button(
+            label="📥 Download Progress Report",
+            data=st.session_state.dashboard_content,
+            file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
+            mime="text/markdown"
+        )
+        
+        if st.button("Close Dashboard", key="close_dashboard"):
+            st.session_state.show_dashboard = False
+            st.rerun()
+
+st.markdown("---")
+        
         # Resume section
         st.markdown("### Resume Progress")
         
