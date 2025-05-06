@@ -37,8 +37,7 @@ except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
 
-# Initialize services - using st.cache_resource instead of st.cache
-@st.cache_resource
+# Initialize services - removed caching to avoid widget error
 def init_services():
     """Initialize the application services."""
     session_manager = SessionManager()
@@ -62,8 +61,25 @@ def init_services():
 services = init_services()
 
 # Load and apply CSS
-css_content = load_css("assets/style.css")
-apply_css(css_content)
+try:
+    css_content = load_css("assets/style.css")
+    apply_css(css_content)
+except Exception as e:
+    st.warning(f"Could not load CSS: {e}. Using default styling.")
+    # Apply minimal CSS as fallback
+    st.markdown("""
+    <style>
+    body {
+        font-family: sans-serif;
+    }
+    .ai-help, .ai-example {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 def add_sidebar_ui():
     """Add the sidebar UI elements."""
@@ -74,7 +90,7 @@ def add_sidebar_ui():
                      alt="Company Logo" style="max-width: 80%; height: auto; margin: 10px auto;" />
             </div>
             <div style="text-align: center;">
-                <h3 style="color: var(--primary-red); margin-bottom: 10px;">
+                <h3 style="color: #D22B2B; margin-bottom: 10px;">
                     <i>Save & Resume Progress</i>
                 </h3>
                 <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
@@ -175,12 +191,16 @@ def main():
         
         # Initialize session state if not already done
         if not hasattr(st.session_state, 'initialized'):
-            # Initial load of questions and instructions
-            st.session_state.questions = load_questions('data/questions.txt')
-            st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
-            # Initialize rest of session state
-            services["session_manager"]._initialize_session_state()
-            st.session_state.initialized = True
+            try:
+                # Initial load of questions and instructions
+                st.session_state.questions = load_questions('data/questions.txt')
+                st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
+                # Initialize rest of session state
+                services["session_manager"]._initialize_session_state()
+                st.session_state.initialized = True
+            except Exception as e:
+                st.error(f"Error initializing session state: {e}")
+                st.stop()
         
         # Display chat history
         services["chat_ui"].display_chat_history()
