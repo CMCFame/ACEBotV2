@@ -57,6 +57,7 @@ def init_services():
         "summary_generator": summary_generator,
         "export_service": export_service,
         "email_service": email_service
+    }
 
 services = init_services()
 
