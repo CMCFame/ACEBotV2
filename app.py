@@ -90,7 +90,7 @@ def add_sidebar_ui():
                      alt="Company Logo" style="max-width: 80%; height: auto; margin: 10px auto;" />
             </div>
             <div style="text-align: center;">
-                <h3 style="color: #D22B2B; margin-bottom: 10px;">
+                <h3 style="color: var(--primary-red); margin-bottom: 10px;">
                     <i>Save & Resume Progress</i>
                 </h3>
                 <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
@@ -114,6 +114,10 @@ def add_sidebar_ui():
             if result["success"]:
                 if result["method"] == "cookie":
                     st.success(result["message"])
+                elif result["method"] == "server":
+                    st.success(f"Session saved to server. ID: {result['session_id']}")
+                    # Show session ID for later use
+                    st.code(result["session_id"])
                 else:
                     st.warning(result["message"])
                     st.download_button(
@@ -125,34 +129,32 @@ def add_sidebar_ui():
                     )
             else:
                 st.error(result["message"])
-
-        st.markdown("---")
         
         # Progress dashboard button
-if st.button("📊 View Full Progress", key="view_progress"):
-    dashboard = services["summary_generator"].generate_progress_dashboard()
-    st.session_state.show_dashboard = True
-    st.session_state.dashboard_content = dashboard
-    st.rerun()
-
-# Display dashboard if requested
-if st.session_state.get("show_dashboard", False):
-    with st.expander("Progress Dashboard", expanded=True):
-        st.markdown(st.session_state.dashboard_content)
-        
-        # Add download button
-        st.download_button(
-            label="📥 Download Progress Report",
-            data=st.session_state.dashboard_content,
-            file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
-            mime="text/markdown"
-        )
-        
-        if st.button("Close Dashboard", key="close_dashboard"):
-            st.session_state.show_dashboard = False
+        if st.button("📊 View Full Progress", key="view_progress"):
+            dashboard = services["summary_generator"].generate_progress_dashboard()
+            st.session_state.show_dashboard = True
+            st.session_state.dashboard_content = dashboard
             st.rerun()
 
-st.markdown("---")
+        # Display dashboard if requested
+        if st.session_state.get("show_dashboard", False):
+            with st.expander("Progress Dashboard", expanded=True):
+                st.markdown(st.session_state.dashboard_content)
+                
+                # Add download button
+                st.download_button(
+                    label="📥 Download Progress Report",
+                    data=st.session_state.dashboard_content,
+                    file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown"
+                )
+                
+                if st.button("Close Dashboard", key="close_dashboard"):
+                    st.session_state.show_dashboard = False
+                    st.rerun()
+
+        st.markdown("---")
         
         # Resume section
         st.markdown("### Resume Progress")
@@ -160,6 +162,17 @@ st.markdown("---")
         # Load from Cookie button
         if st.button("🔄 Resume from Cookie", key="load_cookie"):
             result = services["session_manager"].restore_session(source="cookie")
+            if result["success"]:
+                st.success(result["message"])
+                st.rerun()
+            else:
+                st.error(result["message"])
+        
+        # Server restore section (if enabled)
+        st.markdown("### Resume from Server")
+        session_id = st.text_input("Enter Session ID")
+        if session_id and st.button("Load from Server", key="server_load"):
+            result = services["session_manager"].restore_session(source="server", session_id=session_id)
             if result["success"]:
                 st.success(result["message"])
                 st.rerun()
