@@ -1,6 +1,7 @@
 # modules/chat_ui.py
 import streamlit as st
 from datetime import datetime
+import re
 
 class ChatUI:
     def __init__(self):
@@ -28,6 +29,10 @@ class ChatUI:
             # ASSISTANT MESSAGES
             elif message["role"] == "assistant":
                 content = message["content"]
+                
+                # Strip any HTML tags that might be in the message
+                # This prevents raw HTML from being displayed
+                content = re.sub(r'<[^>]*>', '', content)
 
                 # HELP BOX
                 if "I need help with this question" in content:
@@ -42,27 +47,63 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
 
-                # EXAMPLE BOX
-                elif "*Example:" in content or content.strip().startswith("Example:"):
-                    # Extract example and question text
+                # EXAMPLE BOX - Handling multiple formats of examples
+                elif "*Example:" in content or "Example:" in content:
+                    # First extract any introduction text before the example
+                    intro_text = ""
+                    example_text = ""
+                    question_text = ""
+                    
+                    # Handle the *Example:* markdown format
                     if "*Example:" in content:
                         parts = content.split("*Example:")
-                        intro_text = parts[0].strip() if parts[0].strip() else ""
+                        intro_text = parts[0].strip()
                         
-                        example_text = parts[1].split("*")[0].strip() if len(parts) > 1 else ""
-                        remaining = parts[1].split("*", 1)[1] if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
+                        # Get the example part
+                        example_part = parts[1]
+                        if "*" in example_part:
+                            # Get text between the asterisks
+                            example_text = example_part.split("*")[0].strip()
+                            # Get anything after the closing asterisk
+                            after_example = example_part.split("*", 1)[1].strip() if len(example_part.split("*", 1)) > 1 else ""
+                        else:
+                            # No closing asterisk found
+                            example_text = example_part.strip()
+                            after_example = ""
                         
-                        question_text = ""
-                        if "To continue with our question" in remaining:
-                            question_text = remaining.split("To continue with our question", 1)[1].strip()
-                        elif ":" in remaining:
-                            question_text = remaining.split(":", 1)[1].strip()
+                        # Check for a question after the example
+                        if "To continue with our question" in after_example:
+                            question_text = after_example.split("To continue with our question", 1)[1].strip()
+                        else:
+                            # Look for the first question mark to identify a question
+                            sentences = after_example.split(". ")
+                            for sentence in sentences:
+                                if "?" in sentence:
+                                    question_text = sentence.strip()
+                                    break
+                    
+                    # Handle the regular "Example:" format
                     else:
                         parts = content.split("Example:", 1)
-                        intro_text = parts[0].strip() if parts[0].strip() else ""
-                        example_text = parts[1].strip() if len(parts) > 1 else ""
-                        question_text = ""
-                
+                        intro_text = parts[0].strip()
+                        
+                        example_part = parts[1].strip()
+                        # Check if there's a clear separator after the example
+                        if "\n\n" in example_part:
+                            example_text = example_part.split("\n\n")[0].strip()
+                            after_example = example_part.split("\n\n", 1)[1].strip()
+                            
+                            # Look for a question in the remaining text
+                            sentences = after_example.split(". ")
+                            for sentence in sentences:
+                                if "?" in sentence:
+                                    question_text = sentence.strip()
+                                    break
+                        else:
+                            # If no clear separator, treat everything as the example
+                            example_text = example_part
+                    
+                    # Now display with our custom formatting
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
