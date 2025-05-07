@@ -7,8 +7,6 @@ class ChatUI:
         """Initialize the chat UI components."""
         pass
     
-# In modules/chat_ui.py - Update the assistant message display part
-
     def display_chat_history(self):
         """Display the chat history with styled messages."""
         for message in st.session_state.visible_messages:
@@ -124,82 +122,6 @@ class ChatUI:
                             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
                             {f'<p style="margin: 10px 0 5px 0;">{explanation_part}</p>' if explanation_part else ''}
                             {f'<p style="margin: 5px 0 0 0; font-weight: bold; color: #198754;">{question_part}</p>' if question_part else ''}
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                    )
-
-                # EXAMPLE BOX
-                elif "*Example:" in content or content.strip().startswith("Example:"):
-                    # Extract example and question text
-                    if "*Example:" in content:
-                        example_parts = content.split("*Example:")
-                        if len(example_parts) > 1:
-                            example_text = example_parts[1].split("*")[0].strip()
-                            remainder = example_parts[1].split("*", 1)[1] if len(example_parts[1].split("*")) > 1 else ""
-                            
-                            if "To continue with our question" in remainder:
-                                question_text = remainder.split("To continue with our question", 1)[1].strip()
-                            else:
-                                question_text = remainder.strip()
-                    else:
-                        example_parts = content.split("Example:", 1)
-                        example_text = example_parts[1].strip() if len(example_parts) > 1 else ""
-                        question_text = ""
-
-                    # Only display the example box, don't repeat the question separately                    
-                    st.markdown(
-                        f"""
-                        <div style="display: flex; margin-bottom: 15px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
-                              <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_text}</i></p>
-                            </div>
-                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_text}</p>' if question_text else ''}
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                # REGULAR ASSISTANT MESSAGE
-                else:
-                    # Highlight questions within the message by bolding text that ends with '?'
-                    # But don't create separate message blocks
-                    parts = []
-                    current_part = ""
-                    for sentence in content.split(". "):
-                        if sentence.strip().endswith("?"):
-                            # This is a question sentence - add it with formatting
-                            if current_part:
-                                parts.append(f"<p style='margin: 5px 0;'>{current_part}</p>")
-                                current_part = ""
-                            parts.append(f"<p style='margin: 5px 0; font-weight: bold; color: #198754;'>{sentence.strip()}.</p>")
-                        else:
-                            # This is a regular sentence - add to current part
-                            if current_part:
-                                current_part += ". " + sentence.strip()
-                            else:
-                                current_part = sentence.strip()
-                    
-                    # Add any remaining text
-                    if current_part:
-                        parts.append(f"<p style='margin: 5px 0;'>{current_part}</p>")
-                    
-                    # Join all parts and display as one message
-                    formatted_content = "".join(parts)
-                    
-                    st.markdown(
-                        f"""
-                        <div style="display: flex; margin-bottom: 10px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <div style="margin-top: 5px;">
-                              {formatted_content}
-                            </div>
                           </div>
                         </div>
                         """,
