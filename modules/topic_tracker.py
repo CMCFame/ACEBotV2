@@ -160,3 +160,90 @@ class TopicTracker:
             "covered_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if v],
             "missing_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
         }
+        
+    def verify_question_coverage(self):
+        """Verify which specific questions have been answered."""
+        # Get all responses from the summary generator
+        from modules.summary import SummaryGenerator
+        summary_gen = SummaryGenerator()
+        responses = summary_gen.get_responses_as_list()
+        conversation_insights = summary_gen._extract_insights_from_conversation()
+        
+        # Create a mapping of questions to answers
+        question_answer_map = {}
+        
+        # Add explicitly tracked responses
+        for question, answer in responses:
+            clean_question = summary_gen._normalize_question(question)
+            question_answer_map[clean_question] = answer
+        
+        # Add conversation insights
+        for question, answer in conversation_insights.items():
+            if question not in question_answer_map:
+                question_answer_map[question] = answer
+        
+        # Count answered questions for each topic
+        topic_question_coverage = {topic: 0 for topic in TOPIC_AREAS.keys()}
+        topic_question_total = {topic: 0 for topic in TOPIC_AREAS.keys()}
+        
+        # Map questions to topics
+        question_to_topic = {
+            "name and company": "basic_info",
+            "situation": "basic_info",
+            "employees required": "staffing_details",
+            "roles": "staffing_details",
+            "call first": "contact_process",
+            "devices": "contact_process",
+            "device first": "contact_process",
+            "same list": "list_management",
+            "lists total": "list_management",
+            "job classification": "list_management",
+            "call this list": "list_management",
+            "straight down": "list_management",
+            "skip around": "list_management",
+            "pauses": "list_management",
+            "required number": "insufficient_staffing",
+            "different list": "insufficient_staffing",
+            "different location": "insufficient_staffing",
+            "offer position": "insufficient_staffing",
+            "whole list again": "insufficient_staffing",
+            "do differently": "insufficient_staffing",
+            "simultaneously": "calling_logistics",
+            "no but call again": "calling_logistics",
+            "first pass": "calling_logistics",
+            "change over time": "list_changes",
+            "when change": "list_changes",
+            "content change": "list_changes",
+            "tie breakers": "tiebreakers",
+            "email or text": "additional_rules",
+            "prevent called": "additional_rules",
+            "excuse declined": "additional_rules",
+        }
+        
+        # Count questions by topic
+        for question in st.session_state.questions:
+            normalized = summary_gen._normalize_question(question)
+            topic = None
+            
+            # Find matching topic
+            for key, topic_name in question_to_topic.items():
+                if key in normalized:
+                    topic = topic_name
+                    break
+            
+            if topic:
+                topic_question_total[topic] += 1
+                if normalized in question_answer_map:
+                    topic_question_coverage[topic] += 1
+        
+        # Calculate coverage percentages
+        coverage_results = {}
+        for topic, covered in topic_question_coverage.items():
+            total = topic_question_total[topic] or 1  # Avoid division by zero
+            coverage_results[topic] = {
+                "covered": covered,
+                "total": total,
+                "percentage": int((covered / total) * 100)
+            }
+        
+        return coverage_results

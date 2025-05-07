@@ -267,19 +267,25 @@ class SummaryGenerator:
     
     def generate_progress_dashboard(self):
         """Generate a comprehensive dashboard of all questions and answers."""
-        # Get all responses
+        # Get all responses from explicit list
         responses = self.get_responses_as_list()
         
-        # Also extract responses from chat history (more thorough approach)
-        chat_responses = self._extract_responses_from_chat()
+        # Extract additional insights from conversation
+        conversation_insights = self._extract_insights_from_conversation()
         
-        # Merge the two sets of responses, prioritizing explicit responses
-        all_responses = {}
-        for question, answer in chat_responses:
-            all_responses[question] = answer
-            
+        # Create a mapping of questions to answers
+        question_answer_map = {}
+        
+        # First add explicitly tracked responses
         for question, answer in responses:
-            all_responses[question] = answer
+            # Clean up question to match original question list
+            clean_question = self._normalize_question(question)
+            question_answer_map[clean_question] = answer
+        
+        # Then add conversation insights (these are inferred matches)
+        for question, answer in conversation_insights.items():
+            if question not in question_answer_map:
+                question_answer_map[question] = answer
         
         # Format as markdown dashboard
         dashboard = "# ACE Questionnaire Progress\n\n"
@@ -303,38 +309,98 @@ class SummaryGenerator:
         
         dashboard += "\n## All Questions and Answers\n\n"
         
+        # Calculate answers found
+        answers_found = sum(1 for q in st.session_state.questions if self._normalize_question(q) in question_answer_map)
+        dashboard += f"**Questions Answered:** {answers_found} of {len(st.session_state.questions)}\n\n"
+        
         # Add all questions and answers
         for i, question in enumerate(st.session_state.questions):
-            if question in all_responses:
+            normalized_q = self._normalize_question(question)
+            if normalized_q in question_answer_map:
                 dashboard += f"### Q{i+1}: {question}\n\n"
-                dashboard += f"{all_responses[question]}\n\n"
+                dashboard += f"{question_answer_map[normalized_q]}\n\n"
             else:
                 dashboard += f"### Q{i+1}: {question}\n\n"
                 dashboard += f"*No answer provided yet*\n\n"
         
         return dashboard
 
-    def _extract_responses_from_chat(self):
-        """Extract all question-answer pairs from chat history."""
-        pairs = []
-        current_question = ""
+    def _extract_insights_from_conversation(self):
+        """Extract detailed insights from the conversation to map to specific questions."""
+        # Create a mapping of questions to answers
+        insights = {}
         
-        # Process all messages
-        for i in range(len(st.session_state.visible_messages)):
-            msg = st.session_state.visible_messages[i]
-            
-            # Find questions from assistant
-            if msg["role"] == "assistant":
-                # Extract questions - look for sentences ending with question marks
-                sentences = msg["content"].split(". ")
-                for sentence in sentences:
-                    if "?" in sentence and not sentence.startswith("*Example:"):
-                        current_question = sentence.strip()
-            
-            # Find answers from user (but ignore example requests)
-            elif msg["role"] == "user" and current_question and i > 0:
-                if msg["content"].lower().strip() not in ["example", "can you show me an example?", "show example"]:
-                    pairs.append((current_question, msg["content"]))
-                    current_question = ""  # Reset
+        # Get all messages
+        all_messages = []
+        for msg in st.session_state.visible_messages:
+            if msg["role"] == "user" and len(msg["content"]) > 10:  # Skip very short user messages
+                all_messages.append({"role": "user", "content": msg["content"]})
+            elif msg["role"] == "assistant" and "?" in msg["content"]:
+                all_messages.append({"role": "assistant", "content": msg["content"]})
         
-        return pairs
+        # Define question keywords to look for
+        question_keywords = {
+            "devices are you calling": ["What type of devices are you calling"],
+            "on the same list": ["Is the next employee you call on the same list"],
+            "lists (groups) total": ["How many lists (groups) total do you use"],
+            "based on Job Classification": ["Are each of these lists based on Job Classification"],
+            "based on some other attribute": ["Are they based on some other attribute"],
+            "how do you call this list": ["How do you call this list"],
+            "straight down the list": ["Straight down the list"],
+            "skip around": ["Skip around", "skip around based on qualifications", "based on status"],
+            "pauses while calling": ["Are there any pauses while calling"],
+            "don't get the required number": ["What happens when you don't get the required number"],
+            "call a different list": ["Call a different list"],
+            "call a different location": ["Call a different location"],
+            "offer this position": ["Will you now offer this position"],
+            "consider the whole list": ["Will you consider the whole list"],
+            "call the whole list again": ["Will you call the whole list again"],
+            "do them differently": ["Do you always do the above actions", "do them differently"],
+            "calling simultaneously": ["Is there any issue with calling", "simultaneously"],
+            "no but call again": ["Can someone say \"no, but call again"],
+            "no on the first pass": ["If someone says no on the first pass"],
+            "lists change over time": ["Do the order of the lists ever change"],
+            "when do they change": ["If so, when do they change", "when do they change"],
+            "order of the lists change": ["How does the order of the lists change"],
+            "content of the lists": ["Does the content of the lists", "content of the lists"],
+            "tie breakers": ["what are your tie breakers", "tie breaker", "First Tie breaker", "Second Tie Breaker", "Third Tie Breaker"],
+            "email or text": ["Would you ever email or text", "email or text"],
+            "rules that prevent": ["Do you have rules that prevent", "before the start or after the end"],
+            "rules that would excuse": ["Do you have any rules that would excuse", "declined a callout"]
+        }
+        
+        # Extract key user responses that match question patterns
+        for i, msg in enumerate(all_messages):
+            if msg["role"] == "user" and i > 0:
+                user_response = msg["content"].lower()
+                prev_msg = all_messages[i-1]
+                
+                if prev_msg["role"] == "assistant":
+                    asst_msg = prev_msg["content"].lower()
+                    
+                    # Look for question patterns in assistant message
+                    for key, patterns in question_keywords.items():
+                        for pattern in patterns:
+                            if pattern.lower() in asst_msg and key not in insights:
+                                # Find the matching question in the question list
+                                matching_questions = [q for q in st.session_state.questions 
+                                                if pattern.lower() in q.lower() or key.lower() in q.lower()]
+                                
+                                if matching_questions:
+                                    for q in matching_questions:
+                                        insights[self._normalize_question(q)] = msg["content"]
+        
+        return insights
+
+    def _normalize_question(self, question):
+        """Normalize a question to match between different formats."""
+        # Convert to lowercase, remove punctuation, and strip whitespace
+        normalized = question.lower().strip()
+        
+        # Remove common prefixes like "Q1: " or "Question: "
+        if ":" in normalized:
+            parts = normalized.split(":", 1)
+            if parts[0].replace("q", "").replace("question", "").isdigit():
+                normalized = parts[1].strip()
+        
+        return normalized

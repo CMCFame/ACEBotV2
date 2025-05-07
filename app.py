@@ -32,7 +32,7 @@ try:
     from modules.export import ExportService
     from modules.email_service import EmailService
     from utils.helpers import load_css, apply_css, load_instructions, load_questions
-    from config import COOKIE_KEYS
+    from config import TOPIC_AREAS, COOKIE_KEYS
 except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
@@ -137,6 +137,22 @@ def add_sidebar_ui():
             st.session_state.dashboard_content = dashboard
             st.rerun()
 
+        # Detailed progress check button
+        if st.button("🔍 Check Question Coverage", key="check_coverage"):
+            coverage_results = services["topic_tracker"].verify_question_coverage()
+            
+            # Display results
+            st.write("### Detailed Question Coverage")
+            for topic, data in coverage_results.items():
+                topic_name = TOPIC_AREAS[topic]
+                st.write(f"**{topic_name}**: {data['covered']}/{data['total']} questions ({data['percentage']}%)")
+                
+            # Generate improved dashboard
+            improved_dashboard = services["summary_generator"].generate_progress_dashboard()
+            st.session_state.show_improved_dashboard = True
+            st.session_state.improved_dashboard_content = improved_dashboard
+            st.rerun()
+
         # Display dashboard if requested
         if st.session_state.get("show_dashboard", False):
             with st.expander("Progress Dashboard", expanded=True):
@@ -152,6 +168,23 @@ def add_sidebar_ui():
                 
                 if st.button("Close Dashboard", key="close_dashboard"):
                     st.session_state.show_dashboard = False
+                    st.rerun()
+
+        # Display improved dashboard if requested
+        if st.session_state.get("show_improved_dashboard", False):
+            with st.expander("Improved Progress Dashboard", expanded=True):
+                st.markdown(st.session_state.improved_dashboard_content)
+                
+                # Add download button
+                st.download_button(
+                    label="📥 Download Improved Report",
+                    data=st.session_state.improved_dashboard_content,
+                    file_name=f"ace_improved_report_{datetime.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown"
+                )
+                
+                if st.button("Close Improved Dashboard", key="close_improved_dashboard"):
+                    st.session_state.show_improved_dashboard = False
                     st.rerun()
 
         st.markdown("---")
