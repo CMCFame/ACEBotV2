@@ -44,84 +44,92 @@ class ChatUI:
 
                 # EXAMPLE BOX
                 elif "*Example:" in content or content.strip().startswith("Example:"):
-                    # Parse example and question parts
+                    # Extract example and question text
                     if "*Example:" in content:
                         parts = content.split("*Example:")
                         intro_text = parts[0].strip() if parts[0].strip() else ""
                         
-                        example_part = parts[1].split("*", 1)[0].strip() if len(parts) > 1 else ""
-                        remaining = parts[1].split("*", 1)[1].strip() if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
+                        example_text = parts[1].split("*")[0].strip() if len(parts) > 1 else ""
+                        remaining = parts[1].split("*", 1)[1] if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
                         
-                        # Find question part after the example
-                        question_part = ""
+                        question_text = ""
                         if "To continue with our question" in remaining:
-                            question_part = remaining.split("To continue with our question", 1)[1].strip()
+                            question_text = remaining.split("To continue with our question", 1)[1].strip()
                         elif ":" in remaining:
-                            question_part = remaining.split(":", 1)[1].strip()
-                        
+                            question_text = remaining.split(":", 1)[1].strip()
                     else:
-                        # Handle regular example format
                         parts = content.split("Example:", 1)
                         intro_text = parts[0].strip() if parts[0].strip() else ""
-                        example_part = parts[1].strip() if len(parts) > 1 else ""
-                        question_part = ""
-                    
-                    # Build the display HTML with proper formatting
-                    display_html = f"""
-                    <div style="display: flex; margin-bottom: 15px;">
-                      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                    """
-                    
-                    # Add intro text if present
-                    if intro_text:
-                        display_html += f'<p style="margin: 10px 0 0 0;">{intro_text}</p>'
-                    
-                    # Add example box
-                    display_html += f"""
-                        <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
-                          <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_part}</i></p>
+                        example_text = parts[1].strip() if len(parts) > 1 else ""
+                        question_text = ""
+                
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            {f'<p style="margin: 10px 0 0 0;">{intro_text}</p>' if intro_text else ''}
+                            <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
+                              <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_text}</i></p>
+                            </div>
+                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_text}</p>' if question_text else ''}
+                          </div>
                         </div>
-                    """
-                    
-                    # Add question part if present
-                    if question_part:
-                        display_html += f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_part}</p>'
-                    
-                    display_html += """
-                      </div>
-                    </div>
-                    """
-                    
-                    st.markdown(display_html, unsafe_allow_html=True)
+                        """,
+                        unsafe_allow_html=True
+                    )
 
                 # REGULAR ASSISTANT MESSAGE
                 else:
-                    # Split into explanation and question parts
-                    explanation_part = ""
-                    question_part = ""
+                    # Process the message to identify questions
+                    message_parts = []
+                    current_text = ""
                     
-                    # Find the last question in the message
-                    sentences = content.split(". ")
-                    for i, sentence in enumerate(reversed(sentences)):
-                        if "?" in sentence:
-                            question_part = sentence.strip() + ("." if not sentence.endswith(".") and not sentence.endswith("?") else "")
-                            # Everything before is explanation
-                            explanation_part = ". ".join(sentences[:-i-1]) if i < len(sentences)-1 else ""
-                            break
+                    for sentence in content.split(". "):
+                        sentence = sentence.strip()
+                        if not sentence:
+                            continue
+                            
+                        # Add period back unless it's the last sentence and already has punctuation
+                        if not (sentence.endswith(".") or sentence.endswith("?") or sentence.endswith("!")):
+                            sentence += "."
+                            
+                        # If this is a question (ends with ?)
+                        if sentence.endswith("?"):
+                            # Add any accumulated text first
+                            if current_text:
+                                message_parts.append(("regular", current_text))
+                                current_text = ""
+                            # Add this as a question
+                            message_parts.append(("question", sentence))
+                        else:
+                            # Add to current text
+                            if current_text:
+                                current_text += " " + sentence
+                            else:
+                                current_text = sentence
                     
-                    # If we couldn't find a question, treat whole message as explanation
-                    if not question_part:
-                        explanation_part = content
+                    # Add any remaining text
+                    if current_text:
+                        message_parts.append(("regular", current_text))
                     
-                    # Display message with proper formatting
+                    # Build HTML content
+                    html_content = ""
+                    for part_type, part_text in message_parts:
+                        if part_type == "question":
+                            html_content += f'<p style="margin: 5px 0; font-weight: bold; color: #198754;">{part_text}</p>'
+                        else:
+                            html_content += f'<p style="margin: 5px 0;">{part_text}</p>'
+                    
+                    # Display the message
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 10px;">
                           <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
                             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            {f'<p style="margin: 10px 0 5px 0;">{explanation_part}</p>' if explanation_part else ''}
-                            {f'<p style="margin: 5px 0 0 0; font-weight: bold; color: #198754;">{question_part}</p>' if question_part else ''}
+                            <div style="margin-top: 5px;">
+                              {html_content}
+                            </div>
                           </div>
                         </div>
                         """,
