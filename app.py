@@ -522,6 +522,9 @@ def main():
                                 if st.session_state.current_question_index < len(st.session_state.questions):
                                     st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
                         
+                        # Update AI context to prevent circular questioning
+                        services["topic_tracker"].update_ai_context_after_answer(user_input)
+                        
                         st.rerun()
 
     with tab2:

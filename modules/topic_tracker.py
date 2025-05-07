@@ -247,3 +247,65 @@ class TopicTracker:
             }
         
         return coverage_results
+        
+    def update_ai_context_after_answer(self, user_input):
+        """Update AI context after each user answer to prevent circular questioning."""
+        # Analyze the last few messages to determine what question was just answered
+        if len(st.session_state.visible_messages) >= 2:
+            last_msg = st.session_state.visible_messages[-1]  # User's answer
+            prev_msg = st.session_state.visible_messages[-2]  # Assistant's question
+            
+            if last_msg["role"] == "user" and prev_msg["role"] == "assistant":
+                # Check if this is a substantive answer (not just asking for an example)
+                if last_msg["content"].lower().strip() not in ["example", "can you show me an example?", "show example"]:
+                    # Extract the question from the assistant's message
+                    question_asked = ""
+                    for sentence in prev_msg["content"].split(". "):
+                        if "?" in sentence:
+                            question_asked = sentence.strip() + "?"
+                            break
+                    
+                    if question_asked:
+                        # Check which of our original questions this might be
+                        matched_questions = []
+                        for i, q in enumerate(st.session_state.questions):
+                            # Simple word overlap check
+                            q_words = set(q.lower().split())
+                            asked_words = set(question_asked.lower().split())
+                            if len(q_words.intersection(asked_words)) / max(len(q_words), 1) > 0.3:
+                                matched_questions.append(i)
+                        
+                        # Add context message to avoid asking this question again
+                        if matched_questions:
+                            question_info = ", ".join([f"question {i+1}" for i in matched_questions])
+                            context_msg = {
+                                "role": "system",
+                                "content": f"The user has just answered {question_info} with: '{last_msg['content']}'. Do not ask this question again."
+                            }
+                            st.session_state.chat_history.append(context_msg)
+                            
+                            # Also check if this completes a topic
+                            self._update_topic_coverage_from_answer(question_asked, last_msg["content"])
+    
+    def _update_topic_coverage_from_answer(self, question, answer):
+        """Update topic coverage based on answers to key questions."""
+        combined_text = (question + " " + answer).lower()
+        
+        # Map of key phrases to topics they complete
+        completion_phrases = {
+            "contact first": "contact_process",
+            "devices have": "contact_process", 
+            "call straight down": "list_management",
+            "skip those who are on": "list_management",
+            "call neighboring district": "insufficient_staffing",
+            "call all devices simultaneously": "calling_logistics",
+            "lists update": "list_changes",
+            "seniority is used as": "tiebreakers",
+            "hours of rest": "additional_rules"
+        }
+        
+        # Check for completion phrases
+        for phrase, topic in completion_phrases.items():
+            if phrase in combined_text:
+                if topic in st.session_state.topic_areas_covered:
+                    st.session_state.topic_areas_covered[topic] = True

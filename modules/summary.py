@@ -325,70 +325,136 @@ class SummaryGenerator:
         
         return dashboard
 
+    # In modules/summary.py - Replace the _extract_insights_from_conversation method
+
     def _extract_insights_from_conversation(self):
         """Extract detailed insights from the conversation to map to specific questions."""
         # Create a mapping of questions to answers
         insights = {}
         
-        # Get all messages
-        all_messages = []
-        for msg in st.session_state.visible_messages:
-            if msg["role"] == "user" and len(msg["content"]) > 10:  # Skip very short user messages
-                all_messages.append({"role": "user", "content": msg["content"]})
-            elif msg["role"] == "assistant" and "?" in msg["content"]:
-                all_messages.append({"role": "assistant", "content": msg["content"]})
-        
-        # Define question keywords to look for
-        question_keywords = {
-            "devices are you calling": ["What type of devices are you calling"],
-            "on the same list": ["Is the next employee you call on the same list"],
-            "lists (groups) total": ["How many lists (groups) total do you use"],
-            "based on Job Classification": ["Are each of these lists based on Job Classification"],
-            "based on some other attribute": ["Are they based on some other attribute"],
-            "how do you call this list": ["How do you call this list"],
-            "straight down the list": ["Straight down the list"],
-            "skip around": ["Skip around", "skip around based on qualifications", "based on status"],
-            "pauses while calling": ["Are there any pauses while calling"],
-            "don't get the required number": ["What happens when you don't get the required number"],
-            "call a different list": ["Call a different list"],
-            "call a different location": ["Call a different location"],
-            "offer this position": ["Will you now offer this position"],
-            "consider the whole list": ["Will you consider the whole list"],
-            "call the whole list again": ["Will you call the whole list again"],
-            "do them differently": ["Do you always do the above actions", "do them differently"],
-            "calling simultaneously": ["Is there any issue with calling", "simultaneously"],
-            "no but call again": ["Can someone say \"no, but call again"],
-            "no on the first pass": ["If someone says no on the first pass"],
-            "lists change over time": ["Do the order of the lists ever change"],
-            "when do they change": ["If so, when do they change", "when do they change"],
-            "order of the lists change": ["How does the order of the lists change"],
-            "content of the lists": ["Does the content of the lists", "content of the lists"],
-            "tie breakers": ["what are your tie breakers", "tie breaker", "First Tie breaker", "Second Tie Breaker", "Third Tie Breaker"],
-            "email or text": ["Would you ever email or text", "email or text"],
-            "rules that prevent": ["Do you have rules that prevent", "before the start or after the end"],
-            "rules that would excuse": ["Do you have any rules that would excuse", "declined a callout"]
+        # This dictionary maps keywords to specific question numbers in questions.txt
+        keyword_to_question = {
+            # Basic Info
+            "name and company": 1,
+            "situation": 2,
+            # Staffing
+            "employees required": 3,
+            # Contact Process
+            "call first": 4,
+            "why": 5,
+            "devices have": 6,
+            "device first": 7,
+            "type of devices": 8,
+            # List Management
+            "same list": 9,
+            "lists total": 10, 
+            "job classification": 11,
+            "other attribute": 12,
+            "how do you call": 13,
+            "straight down": 14,
+            "skip around": [15, 16, 17, 18],
+            "pauses": 19,
+            # Insufficient Staffing
+            "don't get required": 20,
+            "different list": 21,
+            "different location": 22,
+            "offer position": 23,
+            "consider list again": 24,
+            "call list again": 25,
+            "do differently": 26,
+            # Calling Logistics
+            "calling simultaneously": [27, 28],
+            "call again if nobody": 29,
+            "first pass": 30,
+            # List Changes
+            "change over time": 31,
+            "when change": 32,
+            "order change": 33,
+            "content change": 34,
+            "when content change": 35,
+            "how content change": 36,
+            # Tiebreakers
+            "tie breakers": 37,
+            "first tiebreaker": 38,
+            "second tiebreaker": 39,
+            "third tiebreaker": 40,
+            # Additional Rules
+            "email or text": 41,
+            "rules prevent": 42,
+            "rules excuse": 43
         }
         
-        # Extract key user responses that match question patterns
-        for i, msg in enumerate(all_messages):
-            if msg["role"] == "user" and i > 0:
-                user_response = msg["content"].lower()
-                prev_msg = all_messages[i-1]
+        # Get conversation pairs (assistant question followed by user answer)
+        conversation_pairs = []
+        for i in range(len(st.session_state.visible_messages) - 1):
+            if (st.session_state.visible_messages[i]["role"] == "assistant" and 
+                st.session_state.visible_messages[i+1]["role"] == "user"):
                 
-                if prev_msg["role"] == "assistant":
-                    asst_msg = prev_msg["content"].lower()
+                asst_msg = st.session_state.visible_messages[i]["content"]
+                user_msg = st.session_state.visible_messages[i+1]["content"]
+                
+                # Skip example requests
+                if user_msg.lower().strip() in ["example", "can you show me an example?", "show example"]:
+                    continue
                     
-                    # Look for question patterns in assistant message
-                    for key, patterns in question_keywords.items():
-                        for pattern in patterns:
-                            if pattern.lower() in asst_msg and key not in insights:
-                                # Find the matching question in the question list
-                                matching_questions = [q for q in st.session_state.questions 
-                                                if pattern.lower() in q.lower() or key.lower() in q.lower()]
-                                
-                                if matching_questions:
-                                    for q in matching_questions:
-                                        insights[self._normalize_question(q)] = msg["content"]
+                conversation_pairs.append((asst_msg, user_msg))
+        
+        # Process each conversation pair
+        for asst_msg, user_msg in conversation_pairs:
+            # Process only substantive user answers (not just requests for examples)
+            if len(user_msg) > 10:
+                # Find which question this answer corresponds to
+                for keyword, question_numbers in keyword_to_question.items():
+                    if keyword.lower() in asst_msg.lower():
+                        # Handle single question number or list of question numbers
+                        if isinstance(question_numbers, list):
+                            for q_num in question_numbers:
+                                if q_num <= len(st.session_state.questions):
+                                    question = st.session_state.questions[q_num-1]
+                                    insights[self._normalize_question(question)] = user_msg
+                        else:
+                            if question_numbers <= len(st.session_state.questions):
+                                question = st.session_state.questions[question_numbers-1]
+                                insights[self._normalize_question(question)] = user_msg
+        
+        # For better question matching, also use the raw Q&A pairs from the conversation
+        assistant_questions = []
+        for i, msg in enumerate(st.session_state.visible_messages):
+            if msg["role"] == "assistant" and "?" in msg["content"]:
+                last_question_part = ""
+                # Find the last question in the message
+                for sentence in msg["content"].split(". "):
+                    if "?" in sentence:
+                        last_question_part = sentence.strip() + "?"
+                
+                if last_question_part and i+1 < len(st.session_state.visible_messages):
+                    if st.session_state.visible_messages[i+1]["role"] == "user":
+                        user_response = st.session_state.visible_messages[i+1]["content"]
+                        if user_response.lower().strip() not in ["example", "can you show me an example?", "show example"]:
+                            assistant_questions.append((last_question_part, user_response))
+        
+        # Match these questions to the original questions list
+        for asst_q, user_answer in assistant_questions:
+            best_match = None
+            best_score = 0
+            
+            for i, q in enumerate(st.session_state.questions):
+                # Calculate similarity score based on word overlap
+                q_words = set(q.lower().split())
+                asst_words = set(asst_q.lower().split())
+                intersection = q_words.intersection(asst_words)
+                
+                # Calculate score based on word overlap ratio
+                if len(q_words) > 0:
+                    score = len(intersection) / len(q_words)
+                    if score > best_score and score > 0.3:  # 30% word overlap threshold
+                        best_score = score
+                        best_match = i
+            
+            # If we found a good match, add it to insights
+            if best_match is not None:
+                orig_q = st.session_state.questions[best_match]
+                insights[self._normalize_question(orig_q)] = user_answer
         
         return insights
 

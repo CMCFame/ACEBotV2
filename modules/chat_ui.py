@@ -7,6 +7,8 @@ class ChatUI:
         """Initialize the chat UI components."""
         pass
     
+# In modules/chat_ui.py - Update the assistant message display part
+
     def display_chat_history(self):
         """Display the chat history with styled messages."""
         for message in st.session_state.visible_messages:
@@ -40,6 +42,93 @@ class ChatUI:
                         </div>
                         """,
                         unsafe_allow_html=True
+                    )
+
+                # EXAMPLE BOX
+                elif "*Example:" in content or content.strip().startswith("Example:"):
+                    # Parse example and question parts
+                    if "*Example:" in content:
+                        parts = content.split("*Example:")
+                        intro_text = parts[0].strip() if parts[0].strip() else ""
+                        
+                        example_part = parts[1].split("*", 1)[0].strip() if len(parts) > 1 else ""
+                        remaining = parts[1].split("*", 1)[1].strip() if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
+                        
+                        # Find question part after the example
+                        question_part = ""
+                        if "To continue with our question" in remaining:
+                            question_part = remaining.split("To continue with our question", 1)[1].strip()
+                        elif ":" in remaining:
+                            question_part = remaining.split(":", 1)[1].strip()
+                        
+                    else:
+                        # Handle regular example format
+                        parts = content.split("Example:", 1)
+                        intro_text = parts[0].strip() if parts[0].strip() else ""
+                        example_part = parts[1].strip() if len(parts) > 1 else ""
+                        question_part = ""
+                    
+                    # Build the display HTML with proper formatting
+                    display_html = f"""
+                    <div style="display: flex; margin-bottom: 15px;">
+                      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                    """
+                    
+                    # Add intro text if present
+                    if intro_text:
+                        display_html += f'<p style="margin: 10px 0 0 0;">{intro_text}</p>'
+                    
+                    # Add example box
+                    display_html += f"""
+                        <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
+                          <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_part}</i></p>
+                        </div>
+                    """
+                    
+                    # Add question part if present
+                    if question_part:
+                        display_html += f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_part}</p>'
+                    
+                    display_html += """
+                      </div>
+                    </div>
+                    """
+                    
+                    st.markdown(display_html, unsafe_allow_html=True)
+
+                # REGULAR ASSISTANT MESSAGE
+                else:
+                    # Split into explanation and question parts
+                    explanation_part = ""
+                    question_part = ""
+                    
+                    # Find the last question in the message
+                    sentences = content.split(". ")
+                    for i, sentence in enumerate(reversed(sentences)):
+                        if "?" in sentence:
+                            question_part = sentence.strip() + ("." if not sentence.endswith(".") and not sentence.endswith("?") else "")
+                            # Everything before is explanation
+                            explanation_part = ". ".join(sentences[:-i-1]) if i < len(sentences)-1 else ""
+                            break
+                    
+                    # If we couldn't find a question, treat whole message as explanation
+                    if not question_part:
+                        explanation_part = content
+                    
+                    # Display message with proper formatting
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            {f'<p style="margin: 10px 0 5px 0;">{explanation_part}</p>' if explanation_part else ''}
+                            {f'<p style="margin: 5px 0 0 0; font-weight: bold; color: #198754;">{question_part}</p>' if question_part else ''}
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
                     )
 
                 # EXAMPLE BOX
