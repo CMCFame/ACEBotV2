@@ -1,7 +1,6 @@
 # modules/chat_ui.py
 import streamlit as st
 from datetime import datetime
-import re
 
 class ChatUI:
     def __init__(self):
@@ -29,10 +28,6 @@ class ChatUI:
             # ASSISTANT MESSAGES
             elif message["role"] == "assistant":
                 content = message["content"]
-                
-                # Strip any HTML tags that might be in the message
-                # This prevents raw HTML from being displayed
-                content = re.sub(r'<[^>]*>', '', content)
 
                 # HELP BOX
                 if "I need help with this question" in content:
@@ -47,63 +42,27 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
 
-                # EXAMPLE BOX - Handling multiple formats of examples
-                elif "*Example:" in content or "Example:" in content:
-                    # First extract any introduction text before the example
-                    intro_text = ""
-                    example_text = ""
-                    question_text = ""
-                    
-                    # Handle the *Example:* markdown format
+                # EXAMPLE BOX
+                elif "*Example:" in content or content.strip().startswith("Example:"):
+                    # Extract example and question text
                     if "*Example:" in content:
                         parts = content.split("*Example:")
-                        intro_text = parts[0].strip()
+                        intro_text = parts[0].strip() if parts[0].strip() else ""
                         
-                        # Get the example part
-                        example_part = parts[1]
-                        if "*" in example_part:
-                            # Get text between the asterisks
-                            example_text = example_part.split("*")[0].strip()
-                            # Get anything after the closing asterisk
-                            after_example = example_part.split("*", 1)[1].strip() if len(example_part.split("*", 1)) > 1 else ""
-                        else:
-                            # No closing asterisk found
-                            example_text = example_part.strip()
-                            after_example = ""
+                        example_text = parts[1].split("*")[0].strip() if len(parts) > 1 else ""
+                        remaining = parts[1].split("*", 1)[1] if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
                         
-                        # Check for a question after the example
-                        if "To continue with our question" in after_example:
-                            question_text = after_example.split("To continue with our question", 1)[1].strip()
-                        else:
-                            # Look for the first question mark to identify a question
-                            sentences = after_example.split(". ")
-                            for sentence in sentences:
-                                if "?" in sentence:
-                                    question_text = sentence.strip()
-                                    break
-                    
-                    # Handle the regular "Example:" format
+                        question_text = ""
+                        if "To continue with our question" in remaining:
+                            question_text = remaining.split("To continue with our question", 1)[1].strip()
+                        elif ":" in remaining:
+                            question_text = remaining.split(":", 1)[1].strip()
                     else:
                         parts = content.split("Example:", 1)
-                        intro_text = parts[0].strip()
-                        
-                        example_part = parts[1].strip()
-                        # Check if there's a clear separator after the example
-                        if "\n\n" in example_part:
-                            example_text = example_part.split("\n\n")[0].strip()
-                            after_example = example_part.split("\n\n", 1)[1].strip()
-                            
-                            # Look for a question in the remaining text
-                            sentences = after_example.split(". ")
-                            for sentence in sentences:
-                                if "?" in sentence:
-                                    question_text = sentence.strip()
-                                    break
-                        else:
-                            # If no clear separator, treat everything as the example
-                            example_text = example_part
-                    
-                    # Now display with our custom formatting
+                        intro_text = parts[0].strip() if parts[0].strip() else ""
+                        example_text = parts[1].strip() if len(parts) > 1 else ""
+                        question_text = ""
+                
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
@@ -122,60 +81,20 @@ class ChatUI:
 
                 # REGULAR ASSISTANT MESSAGE
                 else:
-                    # Process the message to identify questions
-                    message_parts = []
-                    current_text = ""
-                    
-                    for sentence in content.split(". "):
-                        sentence = sentence.strip()
-                        if not sentence:
-                            continue
-                            
-                        # Add period back unless it's the last sentence and already has punctuation
-                        if not (sentence.endswith(".") or sentence.endswith("?") or sentence.endswith("!")):
-                            sentence += "."
-                            
-                        # If this is a question (ends with ?)
-                        if sentence.endswith("?"):
-                            # Add any accumulated text first
-                            if current_text:
-                                message_parts.append(("regular", current_text))
-                                current_text = ""
-                            # Add this as a question
-                            message_parts.append(("question", sentence))
-                        else:
-                            # Add to current text
-                            if current_text:
-                                current_text += " " + sentence
-                            else:
-                                current_text = sentence
-                    
-                    # Add any remaining text
-                    if current_text:
-                        message_parts.append(("regular", current_text))
-                    
-                    # Build HTML content
-                    html_content = ""
-                    for part_type, part_text in message_parts:
-                        if part_type == "question":
-                            html_content += f'<p style="margin: 5px 0; font-weight: bold; color: #198754;">{part_text}</p>'
-                        else:
-                            html_content += f'<p style="margin: 5px 0;">{part_text}</p>'
-                    
-                    # Display the message
-                    st.markdown(
-                        f"""
-                        <div style="display: flex; margin-bottom: 10px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <div style="margin-top: 5px;">
-                              {html_content}
-                            </div>
-                          </div>
+                    # Create a clean, simple HTML structure for the message
+                    assistant_message_html = f"""
+                    <div style="display: flex; margin-bottom: 10px;">
+                      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                        <div style="margin-top: 5px;">
+                          <p style="margin: 0; white-space: pre-wrap;">{content}</p>
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                      </div>
+                    </div>
+                    """
+                    
+                    # Render the HTML
+                    st.markdown(assistant_message_html, unsafe_allow_html=True)
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
