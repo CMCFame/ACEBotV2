@@ -84,49 +84,59 @@ class ChatUI:
     def _display_example_and_question(self, content):
         """
         Display example and question with enhanced visual separation.
-        Uses a more robust parsing approach to handle various formatting patterns.
+        Uses a simplified parsing approach for better compatibility.
         """
-        # Extract example content using regex patterns to handle different formats
-        example_pattern = r'[\*"]?Example:?\s*([^"*]+?)[\*"]?'
-        example_match = re.search(example_pattern, content, re.IGNORECASE)
-        
+        # Extract example content using basic string operations
         example_text = ""
         question_text = ""
         
-        if example_match:
-            example_text = example_match.group(1).strip()
-            
-            # Find the question part after the example
-            # Look for common patterns that indicate the question part
-            question_patterns = [
-                r'To continue with our question[s]?[,:]?\s*(.*?)$',
-                r'Let[\'']s continue[.:]\s*(.*?)$',
-                r'Now,?\s+(.*?\?)$',
-                r'So,?\s+(.*?\?)$'
-            ]
-            
-            for pattern in question_patterns:
-                question_match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
-                if question_match:
-                    question_text = question_match.group(1).strip()
-                    break
-            
-            # If no pattern matched, try to find the last sentence with a question mark
-            if not question_text:
-                sentences = re.split(r'(?<=[.!?])\s+', content.split(example_text, 1)[-1].strip())
-                for sentence in reversed(sentences):
-                    if '?' in sentence:
-                        question_text = sentence.strip()
-                        break
-            
-            # If still no question found, use everything after the example
-            if not question_text:
-                remaining = content.split(example_text, 1)[-1].strip()
-                if remaining and len(remaining) > 10:  # Only use if substantial content remains
-                    question_text = remaining
+        # Find example part
+        if "*Example:" in content:
+            parts = content.split("*Example:", 1)
+            if len(parts) > 1:
+                example_parts = parts[1].split("*", 1)
+                if len(example_parts) > 1:
+                    example_text = example_parts[0].strip()
+                    remaining = example_parts[1].strip()
+                else:
+                    example_text = example_parts[0].strip()
+                    remaining = ""
+            else:
+                remaining = content
+        elif "Example:" in content:
+            parts = content.split("Example:", 1)
+            if len(parts) > 1:
+                example_text = parts[1].strip()
+                remaining = ""
+                
+                # Try to find where example ends and question begins
+                if "To continue with our question" in example_text:
+                    example_parts = example_text.split("To continue with our question", 1)
+                    example_text = example_parts[0].strip()
+                    if len(example_parts) > 1:
+                        question_text = "To continue with our question" + example_parts[1].strip()
+            else:
+                remaining = content
         else:
-            # No example found, treat as regular message
-            question_text = content
+            remaining = content
+            
+        # If we already have question text from above, use it
+        if not question_text and "To continue with our question" in remaining:
+            parts = remaining.split("To continue with our question", 1)
+            if len(parts) > 1:
+                question_text = parts[1].strip()
+        
+        # If still no question found, look for a sentence with a question mark
+        if not question_text:
+            sentences = remaining.split(". ")
+            for sentence in reversed(sentences):
+                if "?" in sentence:
+                    question_text = sentence.strip()
+                    break
+                    
+        # If still no question, use all remaining text
+        if not question_text and remaining:
+            question_text = remaining
         
         # Create HTML with clear visual distinction between example and question
         html = f"""

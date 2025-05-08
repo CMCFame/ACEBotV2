@@ -99,9 +99,8 @@ class AIService:
     def get_example_response(self, last_question):
         """Get a consistently formatted example response."""
         # Enhanced system message to enforce consistent formatting
-        system_message = f"""
-        Provide an example answer to this question: 
-        "{last_question}"
+        system_message = """
+        Provide an example answer to this question. 
         
         Your response MUST follow this EXACT format:
         
@@ -117,7 +116,7 @@ class AIService:
         
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": "Show me an example response"}
+            {"role": "user", "content": f"Show me an example response to: {last_question}"}
         ]
         
         response = self.get_response(messages, max_tokens=250, temperature=0.7)
