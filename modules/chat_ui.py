@@ -2,6 +2,7 @@
 import streamlit as st
 from datetime import datetime
 import re
+import html
 
 class ChatUI:
     def __init__(self):
@@ -29,9 +30,28 @@ class ChatUI:
             # ASSISTANT MESSAGES
             elif message["role"] == "assistant":
                 content = message["content"]
-
+                
+                # Check if content contains HTML tags (indicating raw HTML)
+                if "<div" in content or "<p" in content or "</div>" in content:
+                    # Escape HTML to show as plain text
+                    content = html.escape(content)
+                    
+                    # Create a regular assistant message with the escaped content
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 5px;">
+                              <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
                 # HELP BOX
-                if "I need help with this question" in content:
+                elif "I need help with this question" in content:
                     help_text = content.replace("I need help with this question", "").strip()
                     st.markdown(
                         f"""
