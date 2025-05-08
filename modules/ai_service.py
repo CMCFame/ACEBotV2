@@ -78,7 +78,7 @@ class AIService:
         lower_input = user_input.lower().strip()
         
         # Check for example requests
-        if lower_input in ["example", "show example", "give me an example", "example answer"]:
+        if lower_input in ["example", "show example", "give me an example", "example answer", "can you show me an example?"]:
             return {"type": "example_request"}
         
         # Check for help requests
@@ -95,3 +95,56 @@ class AIService:
             
         # Default - regular input
         return {"type": "regular_input"}
+        
+    def get_example_response(self, last_question):
+        """Get a consistently formatted example response."""
+        # Enhanced system message to enforce consistent formatting
+        system_message = f"""
+        Provide an example answer to this question: 
+        "{last_question}"
+        
+        Your response MUST follow this EXACT format:
+        
+        1. Start with the example inside a box: "Example: [Your detailed example here]"
+        2. Add a completely blank line after the example
+        3. Then add this exact text: "To continue with our question:"
+        4. Followed by the original question, rephrased slightly if needed
+        
+        The example should be specific, relevant to a utility company, and demonstrate a good answer to the question.
+        
+        THE SEPARATION BETWEEN EXAMPLE AND QUESTION IS CRITICAL. Always include the blank line and "To continue with our question:" phrase.
+        """
+        
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": "Show me an example response"}
+        ]
+        
+        response = self.get_response(messages, max_tokens=250, temperature=0.7)
+        
+        # Ensure it has the right format - if not, attempt to fix it
+        if "Example:" not in response or "To continue with our question:" not in response:
+            # Fix formatting by wrapping example and adding separator
+            parts = response.split("\n\n", 1)
+            if len(parts) > 1:
+                example_part = parts[0].strip()
+                question_part = parts[1].strip()
+                
+                # If example doesn't start with "Example:", add it
+                if not example_part.startswith("Example:"):
+                    example_part = f"Example: {example_part}"
+                
+                # If question part doesn't have the continuation phrase, add it
+                if "To continue with our question:" not in question_part:
+                    question_part = f"To continue with our question:\n{question_part}"
+                
+                response = f"{example_part}\n\nTo continue with our question:\n{question_part}"
+            else:
+                # Single part response - wrap it as an example and add a generic question
+                example_part = response.strip()
+                if not example_part.startswith("Example:"):
+                    example_part = f"Example: {example_part}"
+                
+                response = f"{example_part}\n\nTo continue with our question:\n{last_question}"
+        
+        return response

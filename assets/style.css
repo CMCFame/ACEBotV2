@@ -68,3 +68,113 @@ button[data-testid="baseButton-secondary"]:hover {
     background-color: #e0e0e0;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
+
+/* Enhanced styling for example boxes */
+.example-box {
+    background-color: #fff3cd;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 5px solid #ffc107;
+}
+
+.example-title {
+    font-weight: bold;
+    color: #856404;
+    margin: 0;
+}
+
+.example-content {
+    font-style: italic;
+    color: #533f03;
+    margin-top: 8px;
+}
+
+/* Enhanced styling for question boxes */
+.question-box {
+    background-color: #e8f4ff;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 5px solid #007bff;
+}
+
+.question-title {
+    font-weight: bold;
+    color: #004085;
+    margin: 0;
+}
+
+.question-content {
+    color: #0c5460;
+    margin-top: 8px;
+    font-weight: 500;
+}
+
+/* Welcome back message styling */
+.welcome-back {
+    background-color: #e8f4f8;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 5px solid #4e8cff;
+    color: #0d6efd;
+}
+
+/* Session ID display */
+.session-id {
+    font-family: monospace;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    font-size: 16px;
+    letter-spacing: 1px;
+    text-align: center;
+    margin: 10px 0;
+    color: #333;
+}
+
+/* Copy button styling */
+.copy-button {
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #555;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.copy-button:hover {
+    background-color: #e9ecef;
+    color: #333;
+}
+
+/* Visual separator for example and question */
+.content-separator {
+    height: 1px;
+    background-color: #e0e0e0;
+    margin: 15px 0;
+}
+
+/* Special styling for help responses */
+.help-box {
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 5px solid #17a2b8;
+}
+
+.help-title {
+    font-weight: bold;
+    color: #17a2b8;
+    margin: 0;
+}
+
+.help-content {
+    color: #333;
+    margin-top: 8px;
+}

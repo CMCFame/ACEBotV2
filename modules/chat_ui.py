@@ -1,6 +1,7 @@
 # modules/chat_ui.py
 import streamlit as st
 from datetime import datetime
+import re
 
 class ChatUI:
     def __init__(self):
@@ -8,7 +9,7 @@ class ChatUI:
         pass
     
     def display_chat_history(self):
-        """Display the chat history with styled messages."""
+        """Display the chat history with styled messages and improved example formatting."""
         for message in st.session_state.visible_messages:
             # USER MESSAGES
             if message["role"] == "user":
@@ -42,37 +43,21 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
 
-                # EXAMPLE BOX
-                elif "*Example:" in content or content.strip().startswith("Example:"):
-                    # Extract example and question text
-                    if "*Example:" in content:
-                        parts = content.split("*Example:")
-                        intro_text = parts[0].strip() if parts[0].strip() else ""
-                        
-                        example_text = parts[1].split("*")[0].strip() if len(parts) > 1 else ""
-                        remaining = parts[1].split("*", 1)[1] if len(parts) > 1 and len(parts[1].split("*", 1)) > 1 else ""
-                        
-                        question_text = ""
-                        if "To continue with our question" in remaining:
-                            question_text = remaining.split("To continue with our question", 1)[1].strip()
-                        elif ":" in remaining:
-                            question_text = remaining.split(":", 1)[1].strip()
-                    else:
-                        parts = content.split("Example:", 1)
-                        intro_text = parts[0].strip() if parts[0].strip() else ""
-                        example_text = parts[1].strip() if len(parts) > 1 else ""
-                        question_text = ""
-                
+                # ENHANCED EXAMPLE & QUESTION BOX
+                elif "*Example:" in content or "Example:" in content:
+                    # Process with new more robust parsing
+                    self._display_example_and_question(content)
+                    
+                # WELCOME BACK MESSAGE (SESSION RESTORATION)
+                elif "Welcome back!" in content and "I've restored your previous session" in content:
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #4e8cff;">
                             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            {f'<p style="margin: 10px 0 0 0;">{intro_text}</p>' if intro_text else ''}
-                            <div style="background-color: #fff3cd; border-radius: 10px; padding: 10px; margin: 10px 0; border-left: 5px solid #ffc107;">
-                              <p style="margin: 0;"><strong>📝 Example:</strong> <i>{example_text}</i></p>
+                            <div style="margin-top: 10px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd;">{content}</p>
                             </div>
-                            {f'<p style="margin: 10px 0 0 0; font-weight: bold; color: #0c5460;">{question_text}</p>' if question_text else ''}
                           </div>
                         </div>
                         """,
@@ -95,6 +80,85 @@ class ChatUI:
                     
                     # Render the HTML
                     st.markdown(assistant_message_html, unsafe_allow_html=True)
+    
+    def _display_example_and_question(self, content):
+        """
+        Display example and question with enhanced visual separation.
+        Uses a more robust parsing approach to handle various formatting patterns.
+        """
+        # Extract example content using regex patterns to handle different formats
+        example_pattern = r'[\*"]?Example:?\s*([^"*]+?)[\*"]?'
+        example_match = re.search(example_pattern, content, re.IGNORECASE)
+        
+        example_text = ""
+        question_text = ""
+        
+        if example_match:
+            example_text = example_match.group(1).strip()
+            
+            # Find the question part after the example
+            # Look for common patterns that indicate the question part
+            question_patterns = [
+                r'To continue with our question[s]?[,:]?\s*(.*?)$',
+                r'Let[\'']s continue[.:]\s*(.*?)$',
+                r'Now,?\s+(.*?\?)$',
+                r'So,?\s+(.*?\?)$'
+            ]
+            
+            for pattern in question_patterns:
+                question_match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+                if question_match:
+                    question_text = question_match.group(1).strip()
+                    break
+            
+            # If no pattern matched, try to find the last sentence with a question mark
+            if not question_text:
+                sentences = re.split(r'(?<=[.!?])\s+', content.split(example_text, 1)[-1].strip())
+                for sentence in reversed(sentences):
+                    if '?' in sentence:
+                        question_text = sentence.strip()
+                        break
+            
+            # If still no question found, use everything after the example
+            if not question_text:
+                remaining = content.split(example_text, 1)[-1].strip()
+                if remaining and len(remaining) > 10:  # Only use if substantial content remains
+                    question_text = remaining
+        else:
+            # No example found, treat as regular message
+            question_text = content
+        
+        # Create HTML with clear visual distinction between example and question
+        html = f"""
+        <div style="display: flex; margin-bottom: 15px;">
+          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+        """
+        
+        # Only add example box if example was found
+        if example_text:
+            html += f"""
+            <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+              <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
+              <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+            </div>
+            """
+        
+        # Add question part if found
+        if question_text:
+            html += f"""
+            <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
+              <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
+              <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+            </div>
+            """
+        
+        html += """
+          </div>
+        </div>
+        """
+        
+        st.markdown(html, unsafe_allow_html=True)
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""

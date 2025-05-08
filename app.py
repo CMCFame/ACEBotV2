@@ -283,7 +283,7 @@ def main():
                 ])
                 st.rerun()
             
-            # Process example button click
+            # Process example button click - UPDATED to use the new get_example_response method
             if example_button:
                 # Extract the last assistant message for context
                 last_assistant_message = None
@@ -292,25 +292,8 @@ def main():
                         last_assistant_message = msg["content"]
                         break
                 
-                # Create example request messages
-                example_messages = st.session_state.chat_history.copy()
-                
-                # Add system message to provide example
-                example_messages.append({
-                    "role": "system", 
-                    "content": f"""
-                    Provide ONLY an example answer for the LAST question you asked, which was: 
-                    "{last_assistant_message}"
-                    
-                    The example MUST be directly relevant to what you just asked the user.
-                    Format your response exactly as: *"Example: [your example here]"*
-                    
-                    After the example, repeat the last question verbatim so the user knows what to answer.
-                    """
-                })
-                
-                # Get example response
-                example_response = services["ai_service"].get_response(example_messages)
+                # Get example response with consistent formatting
+                example_response = services["ai_service"].get_example_response(last_assistant_message)
                 
                 # Add to chat history
                 st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
@@ -334,7 +317,7 @@ def main():
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
                     if message_type["type"] == "example_request":
-                        # Handle example request
+                        # Handle example request using the new get_example_response method
                         # Find the last question asked by the assistant
                         last_question = None
                         for msg in reversed(st.session_state.visible_messages):
@@ -342,25 +325,8 @@ def main():
                                 last_question = msg["content"]
                                 break
                         
-                        example_messages = st.session_state.chat_history.copy()
-                        example_messages.append({
-                            "role": "system", 
-                            "content": f"""
-                            Provide an example answer for the LAST question you asked. The example MUST be directly relevant to what you just asked the user.
-                            
-                            Format your response EXACTLY as follows, including the spacing:
-                            
-                            *Example: "[your example here]"*
-                            
-                            [BLANK LINE]
-                            
-                            To continue with our question, [restate the original question in full]
-                            
-                            Note: There must be a completely blank line between the example and the question to create visual separation.
-                            """
-                        })
-                        
-                        example_response = services["ai_service"].get_response(example_messages)
+                        # Get example response with consistent formatting
+                        example_response = services["ai_service"].get_example_response(last_question)
                         
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.chat_history.append({"role": "assistant", "content": example_response})
