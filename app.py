@@ -235,6 +235,13 @@ def main():
                 st.error(f"Error initializing session state: {e}")
                 st.stop()
         
+        # Initialize pending example and help session variables
+        if 'pending_example' not in st.session_state:
+            st.session_state.pending_example = None
+            
+        if 'pending_help' not in st.session_state:
+            st.session_state.pending_help = None
+        
         # Display chat history with special handling for examples
         for i, message in enumerate(st.session_state.visible_messages):
             # Skip messages that have been directly displayed already
@@ -301,6 +308,64 @@ def main():
                         unsafe_allow_html=True
                     )
         
+        # Display any pending help message
+        if st.session_state.pending_help:
+            help_text = st.session_state.pending_help
+            
+            # Render the help box
+            st.markdown(
+                f"""
+                <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
+                  <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
+                  <p style="margin: 10px 0 0 0;">{help_text}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Add to visible messages
+            st.session_state.visible_messages.append({
+                "role": "assistant",
+                "content": help_text
+            })
+            
+            # Clear the pending help
+            st.session_state.pending_help = None
+        
+        # Display any pending example
+        if st.session_state.pending_example:
+            example_text = st.session_state.pending_example["example_text"]
+            question_text = st.session_state.pending_example["question_text"]
+            
+            # Render the example
+            st.markdown(
+                f"""
+                <div style="display: flex; margin-bottom: 15px;">
+                  <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                    <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                    <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+                      <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
+                      <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+                    </div>
+                    <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
+                      <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
+                      <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Save this to visible messages for history
+            st.session_state.visible_messages.append({
+                "role": "assistant", 
+                "content": f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
+            })
+            
+            # Clear the pending example so it doesn't show again
+            st.session_state.pending_example = None
+        
         # Display progress bar if beyond first question
         if st.session_state.current_question_index > 0:
             progress_data = services["topic_tracker"].get_progress_data()
@@ -336,7 +401,7 @@ def main():
             # Add help/example buttons if not in summary mode
             help_button, example_button = services["chat_ui"].add_help_example_buttons()
             
-            # Process help button click
+            # Process help button click - UPDATED to use session state
             if help_button:
                 # Get the current question context
                 last_question = None
@@ -359,13 +424,16 @@ def main():
                 # Add help interaction to chat history
                 st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
                 st.session_state.chat_history.append({"role": "assistant", "content": help_response})
-                st.session_state.visible_messages.extend([
-                    {"role": "user", "content": "I need help with this question"},
-                    {"role": "assistant", "content": help_response}
-                ])
-                st.rerun()
+                
+                # Add user message to visible messages
+                st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
+                
+                # Save the help response to session state
+                st.session_state.pending_help = help_response
+                
+                # No st.rerun() here
             
-            # Process example button click - UPDATED to use direct HTML rendering
+            # Process example button click - UPDATED to use session state
             if example_button:
                 # Extract the last question from the assistant
                 last_question = None
@@ -404,21 +472,15 @@ def main():
                     # Add user message to visible messages
                     st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
                     
-                    # Directly render the formatted example using HTML
-                    # This is the key part that bypasses the regular rendering pipeline
-                    st.markdown(create_example_html(example_text, last_question), unsafe_allow_html=True)
+                    # Save the example in session state for rendering
+                    st.session_state.pending_example = {
+                        "example_text": example_text,
+                        "question_text": last_question
+                    }
                     
-                    # Add to visible messages but mark as already displayed
-                    # We'll check for this flag in our display code
-                    st.session_state.visible_messages.append({
-                        "role": "assistant", 
-                        "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}",
-                        "already_displayed": True  # Set this flag to prevent double-display
-                    })
+                    # No st.rerun() here - we want to let the display happen naturally
                 else:
                     st.error("Could not find a question to provide an example for.")
-                
-                st.rerun()
             
             # Add input form
             user_input = services["chat_ui"].add_input_form()
@@ -470,19 +532,17 @@ def main():
                             # Add user message to visible messages
                             st.session_state.visible_messages.append({"role": "user", "content": user_input})
                             
-                            # Directly render the formatted example using HTML
-                            st.markdown(create_example_html(example_text, last_question), unsafe_allow_html=True)
+                            # Save the example in session state for rendering
+                            st.session_state.pending_example = {
+                                "example_text": example_text,
+                                "question_text": last_question
+                            }
                             
-                            # Add to visible messages but mark as already displayed
-                            st.session_state.visible_messages.append({
-                                "role": "assistant", 
-                                "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}",
-                                "already_displayed": True  # Set this flag to prevent double-display
-                            })
+                            # Force a rerun to display the user message
+                            st.rerun()
                         else:
                             st.error("Could not find a question to provide an example for.")
-                        
-                        st.rerun()
+                            st.rerun()
                         
                     elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
                         # Handle summary request
