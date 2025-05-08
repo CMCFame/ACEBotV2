@@ -29,6 +29,25 @@ except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
 
+# Function to create formatted HTML for examples
+def create_example_html(example_text, question_text):
+    """Create formatted HTML for examples and questions."""
+    return f"""
+    <div style="display: flex; margin-bottom: 15px;">
+      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+          <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
+          <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+        </div>
+        <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
+          <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
+          <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+        </div>
+      </div>
+    </div>
+    """
+
 # Initialize services - removed caching to avoid widget error
 def init_services():
     """Initialize the application services."""
@@ -216,8 +235,71 @@ def main():
                 st.error(f"Error initializing session state: {e}")
                 st.stop()
         
-        # Display chat history
-        services["chat_ui"].display_chat_history()
+        # Display chat history with special handling for examples
+        for i, message in enumerate(st.session_state.visible_messages):
+            # Skip messages that have been directly displayed already
+            if message.get("already_displayed"):
+                continue
+                
+            # Otherwise use the regular ChatUI display for this message
+            if message["role"] == "user":
+                user_label = st.session_state.user_info.get("name", "You") or "You"
+                st.markdown(
+                    f"""
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                      <div style="background-color: #e6f7ff; border-radius: 15px 15px 0 15px; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>{user_label}</strong></p>
+                        <p style="margin: 0; white-space: pre-wrap;">{message["content"]}</p>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            elif message["role"] == "assistant":
+                content = message["content"]
+                
+                # HELP BOX
+                if "I need help with this question" in content:
+                    help_text = content.replace("I need help with this question", "").strip()
+                    st.markdown(
+                        f"""
+                        <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
+                          <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
+                          <p style="margin: 10px 0 0 0;">{help_text}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                # WELCOME BACK MESSAGE (SESSION RESTORATION)
+                elif "Welcome back!" in content and "I've restored your previous session" in content:
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #4e8cff;">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 10px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                # REGULAR ASSISTANT MESSAGE
+                else:
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 5px;">
+                              <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
         
         # Display progress bar if beyond first question
         if st.session_state.current_question_index > 0:
@@ -283,25 +365,59 @@ def main():
                 ])
                 st.rerun()
             
-            # Process example button click - UPDATED to use the new get_example_response method
+            # Process example button click - UPDATED to use direct HTML rendering
             if example_button:
-                # Extract the last assistant message for context
-                last_assistant_message = None
+                # Extract the last question from the assistant
+                last_question = None
                 for msg in reversed(st.session_state.visible_messages):
-                    if msg["role"] == "assistant":
-                        last_assistant_message = msg["content"]
-                        break
+                    if msg["role"] == "assistant" and "?" in msg["content"]:
+                        sentences = msg["content"].split(". ")
+                        for sentence in reversed(sentences):
+                            if "?" in sentence:
+                                last_question = sentence.strip()
+                                break
+                        if last_question:
+                            break
                 
-                # Get example response with consistent formatting
-                example_response = services["ai_service"].get_example_response(last_assistant_message)
+                if not last_question:
+                    # Fallback to the last assistant message
+                    for msg in reversed(st.session_state.visible_messages):
+                        if msg["role"] == "assistant":
+                            last_question = msg["content"]
+                            break
                 
-                # Add to chat history
-                st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
-                st.session_state.chat_history.append({"role": "assistant", "content": example_response})
-                st.session_state.visible_messages.extend([
-                    {"role": "user", "content": "Can you show me an example?"},
-                    {"role": "assistant", "content": example_response}
-                ])
+                if last_question:
+                    # Get a simple example without any formatting
+                    example_messages = [
+                        {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
+                        {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
+                    ]
+                    
+                    example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
+                    
+                    # Add to chat history
+                    st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
+                    
+                    # Store the response in chat history in a format that's useful for continuation
+                    st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
+                    
+                    # Add user message to visible messages
+                    st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
+                    
+                    # Directly render the formatted example using HTML
+                    # This is the key part that bypasses the regular rendering pipeline
+                    st.markdown(create_example_html(example_text, last_question), unsafe_allow_html=True)
+                    
+                    # Add to visible messages but mark as already displayed
+                    # We'll check for this flag in our display code
+                    st.session_state.visible_messages.append({
+                        "role": "assistant", 
+                        "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}",
+                        "already_displayed": True  # Set this flag to prevent double-display
+                    })
+                else:
+                    st.error("Could not find a question to provide an example for.")
+                
                 st.rerun()
             
             # Add input form
@@ -317,23 +433,55 @@ def main():
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
                     if message_type["type"] == "example_request":
-                        # Handle example request using the new get_example_response method
-                        # Find the last question asked by the assistant
+                        # Extract the last question from the assistant
                         last_question = None
                         for msg in reversed(st.session_state.visible_messages):
-                            if msg["role"] == "assistant":
-                                last_question = msg["content"]
-                                break
+                            if msg["role"] == "assistant" and "?" in msg["content"]:
+                                sentences = msg["content"].split(". ")
+                                for sentence in reversed(sentences):
+                                    if "?" in sentence:
+                                        last_question = sentence.strip()
+                                        break
+                                if last_question:
+                                    break
                         
-                        # Get example response with consistent formatting
-                        example_response = services["ai_service"].get_example_response(last_question)
+                        if not last_question:
+                            # Fallback to the last assistant message
+                            for msg in reversed(st.session_state.visible_messages):
+                                if msg["role"] == "assistant":
+                                    last_question = msg["content"]
+                                    break
                         
-                        st.session_state.chat_history.append({"role": "user", "content": user_input})
-                        st.session_state.chat_history.append({"role": "assistant", "content": example_response})
-                        st.session_state.visible_messages.extend([
-                            {"role": "user", "content": user_input},
-                            {"role": "assistant", "content": example_response}
-                        ])
+                        if last_question:
+                            # Get a simple example without any formatting
+                            example_messages = [
+                                {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
+                                {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
+                            ]
+                            
+                            example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
+                            
+                            # Add to chat history
+                            st.session_state.chat_history.append({"role": "user", "content": user_input})
+                            
+                            # Store the response in chat history
+                            st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
+                            
+                            # Add user message to visible messages
+                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                            
+                            # Directly render the formatted example using HTML
+                            st.markdown(create_example_html(example_text, last_question), unsafe_allow_html=True)
+                            
+                            # Add to visible messages but mark as already displayed
+                            st.session_state.visible_messages.append({
+                                "role": "assistant", 
+                                "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}",
+                                "already_displayed": True  # Set this flag to prevent double-display
+                            })
+                        else:
+                            st.error("Could not find a question to provide an example for.")
+                        
                         st.rerun()
                         
                     elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
