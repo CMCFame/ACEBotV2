@@ -5,26 +5,11 @@ import streamlit as st
 from datetime import datetime
 import os
 
-# First, check if the cookie manager is available
-COOKIES_AVAILABLE = False
-try:
-    from streamlit_cookies_manager import EncryptedCookieManager
-    COOKIES_AVAILABLE = True
-except ImportError:
-    print("Warning: streamlit_cookies_manager not available. File-based session storage will be used.")
-
 # Import only after conditional import check
 try:
-    from config import COOKIE_PREFIX, COOKIE_PASSWORD_ENV, COOKIE_DEFAULT_PASSWORD, COOKIE_KEYS, TOPIC_AREAS
+    from config import TOPIC_AREAS
 except ImportError:
     # Default config values if config module is not available
-    COOKIE_PREFIX = "ace_"
-    COOKIE_PASSWORD_ENV = "COOKIES_PASSWORD"
-    COOKIE_DEFAULT_PASSWORD = "Awm9X0RUnU"
-    COOKIE_KEYS = {
-        "SESSION": "session_data",
-        "TEST": "test_cookie"
-    }
     TOPIC_AREAS = {
         "basic_info": "Basic Information",
         "staffing_details": "Staffing Details",
@@ -51,32 +36,10 @@ except ImportError:
 
 class SessionManager:
     def __init__(self):
-        """Initialize the session manager with both cookie and file-based storage options."""
-        self.cookies = self._init_cookie_manager() if COOKIES_AVAILABLE else None
+        """Initialize the session manager with server-based storage as the primary method."""
+        # Initialize server storage
         self.server_storage = ServerStorage()
         
-    def _init_cookie_manager(self):
-        """Initialize the cookie manager with appropriate encryption."""
-        if not COOKIES_AVAILABLE:
-            return None
-            
-        cookie_password = os.environ.get(COOKIE_PASSWORD_ENV, COOKIE_DEFAULT_PASSWORD)
-        
-        try:
-            cookies = EncryptedCookieManager(
-                prefix=COOKIE_PREFIX,
-                password=cookie_password,
-            )
-            
-            if not cookies.ready():
-                st.error("Cookie manager initialization failed. File storage will be used as fallback.")
-                return None
-            
-            return cookies
-        except Exception as e:
-            print(f"Error initializing cookie manager: {e}")
-            return None
-    
     def get_session_state(self):
         """Return the current session state data structure."""
         if 'user_info' not in st.session_state:
@@ -90,7 +53,7 @@ class SessionManager:
             "visible_messages": st.session_state.visible_messages,
             "topic_areas_covered": st.session_state.topic_areas_covered,
             "saved_timestamp": datetime.now().isoformat(),
-            "version": "2.0"  # Session format version for compatibility checks
+            "version": "3.0"  # Updated version for server-first approach
         }
     
     def _initialize_session_state(self):
@@ -124,7 +87,7 @@ class SessionManager:
         st.session_state.visible_messages.append({"role": "assistant", "content": welcome_message})
 
     def save_session(self):
-        """Save the current session state to cookies, server, and/or file."""
+        """Save the current session state to server storage or file."""
         try:
             # Get session data
             session_data = self.get_session_state()
@@ -142,32 +105,14 @@ class SessionManager:
                 if isinstance(msg, dict) and "role" in msg and "content" in msg:
                     clean_visible_messages.append({"role": msg["role"], "content": msg["content"]})
             session_data["visible_messages"] = clean_visible_messages
-
-            # Try to save to cookie if available
-            cookie_success = False
-            if COOKIES_AVAILABLE and self.cookies:
-                try:
-                    self.cookies[COOKIE_KEYS["SESSION"]] = json.dumps(session_data)
-                    self.cookies.save()
-                    if self.cookies.get(COOKIE_KEYS["SESSION"]):
-                        cookie_success = True
-                except Exception as e:
-                    print(f"Cookie save error: {str(e)}")
             
-            # Try to save to server storage
+            # Try to save to server storage (primary method)
             server_result = self.server_storage.save_session(session_data)
             server_success = server_result.get("success", False)
             session_id = server_result.get("session_id", "")
             
-            # Determine best result to return
-            if cookie_success:
-                return {
-                    "success": True, 
-                    "method": "cookie", 
-                    "message": "Session saved to browser cookie.",
-                    "session_id": session_id if server_success else None
-                }
-            elif server_success:
+            # Return the result
+            if server_success:
                 return {
                     "success": True,
                     "method": "server",
@@ -175,11 +120,11 @@ class SessionManager:
                     "session_id": session_id
                 }
             else:
-                # Return serialized data for file download as last resort
+                # Return serialized data for file download as fallback
                 return {
                     "success": True, 
                     "method": "file", 
-                    "message": "Cookie and server storage unavailable. Please download the file.",
+                    "message": "Server storage unavailable. Please download the file.",
                     "data": json.dumps(session_data)
                 }
                 
@@ -188,10 +133,10 @@ class SessionManager:
     
     def restore_session(self, source="file", file_data=None, session_id=None):
         """
-        Restore a saved session from cookie, server, or file.
+        Restore a saved session from server or file.
         
         Args:
-            source: "cookie", "server", or "file"
+            source: "server" or "file"
             file_data: JSON string data if source is "file"
             session_id: Session ID if source is "server"
             
@@ -208,11 +153,7 @@ class SessionManager:
             
             # Get session data from source
             session_data = None
-            if source == "cookie" and COOKIES_AVAILABLE and self.cookies:
-                cookie_data = self.cookies.get(COOKIE_KEYS["SESSION"])
-                if cookie_data:
-                    session_data = json.loads(cookie_data)
-            elif source == "server" and session_id:
+            if source == "server" and session_id:
                 server_result = self.server_storage.load_session(session_id)
                 if server_result.get("success", False):
                     session_data = server_result.get("session_data")
@@ -265,6 +206,7 @@ class SessionManager:
                 current_q_index = session_data.get('current_question_index', 0)
                 current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
                 
+                # Enhanced context restoration to help the AI understand exactly where we left off
                 restoration_context = {
                     "role": "system",
                     "content": f"""
@@ -275,6 +217,7 @@ class SessionManager:
                     3. Company: {session_data['user_info'].get('company', 'unknown company')}
                     4. Current question index: {current_q_index}
                     5. Current question: {current_q}
+                    6. Last active timestamp: {session_data.get('saved_timestamp', 'unknown')}
                     
                     Topics already covered in detail:
                     {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v])}
@@ -287,6 +230,10 @@ class SessionManager:
                     - DO NOT repeat questions that have already been asked
                     - FOCUS on gathering information about missing topics
                     - Acknowledge that the conversation is being resumed
+                    - Maintain a friendly, conversational tone
+                    - If the user seems confused, briefly remind them where you were in the conversation
+                    - If you want to summarize what you've learned so far to help reestablish context, do so BRIEFLY (1-2 sentences max)
+                    - Respect any previous statements about skipping certain questions or topics
                     """
                 }
                 
@@ -337,20 +284,3 @@ class SessionManager:
         except Exception as e:
             st.session_state.restoring_session = False
             return {"success": False, "message": f"Error restoring session: {str(e)}"}
-    
-    def test_cookie(self, test_value="test_value"):
-        """Set a test cookie to verify cookie functionality."""
-        if not COOKIES_AVAILABLE or not self.cookies:
-            return {"success": False, "message": "Cookie manager not initialized or not available."}
-            
-        try:
-            self.cookies[COOKIE_KEYS["TEST"]] = test_value
-            self.cookies.save()
-            
-            # Verify cookie was set
-            if self.cookies.get(COOKIE_KEYS["TEST"]) == test_value:
-                return {"success": True, "message": f"Test cookie set. Value: {test_value}"}
-            else:
-                return {"success": False, "message": "Failed to verify test cookie."}
-        except Exception as e:
-            return {"success": False, "message": f"Error setting test cookie: {str(e)}"}

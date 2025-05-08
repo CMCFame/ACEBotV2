@@ -14,14 +14,6 @@ import os
 import json
 from datetime import datetime
 
-# First check if we have cookies manager
-cookies_available = False
-try:
-    from streamlit_cookies_manager import EncryptedCookieManager
-    cookies_available = True
-except ImportError:
-    st.warning("streamlit-cookies-manager is not installed. Session persistence will be limited to file-based storage.")
-
 # Continue with other imports
 try:
     from modules.session import SessionManager
@@ -32,7 +24,7 @@ try:
     from modules.export import ExportService
     from modules.email_service import EmailService
     from utils.helpers import load_css, apply_css, load_instructions, load_questions
-    from config import TOPIC_AREAS, COOKIE_KEYS
+    from config import TOPIC_AREAS
 except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
@@ -99,25 +91,17 @@ def add_sidebar_ui():
             </div>
         """, unsafe_allow_html=True)
 
-        # Cookie Test Section (for debugging)
-        if st.button("Test Cookie"):
-            result = services["session_manager"].test_cookie()
-            if result["success"]:
-                st.success(result["message"])
-            else:
-                st.error(result["message"])
-
         # Save Progress button
         if st.button("💾 Save Progress", key="save_progress"):
             result = services["session_manager"].save_session()
             
             if result["success"]:
-                if result["method"] == "cookie":
-                    st.success(result["message"])
-                elif result["method"] == "server":
-                    st.success(f"Session saved to server. ID: {result['session_id']}")
+                if result["method"] == "server":
+                    st.success(f"Session saved. Your Session ID: {result['session_id']}")
                     # Show session ID for later use
                     st.code(result["session_id"])
+                    # Add a note to copy the session ID
+                    st.info("Please copy and save this Session ID to resume your progress later.")
                 else:
                     st.warning(result["message"])
                     st.download_button(
@@ -131,26 +115,10 @@ def add_sidebar_ui():
                 st.error(result["message"])
         
         # Progress dashboard button
-        if st.button("📊 View Full Progress", key="view_progress"):
+        if st.button("📊 View Progress Dashboard", key="view_progress"):
             dashboard = services["summary_generator"].generate_progress_dashboard()
             st.session_state.show_dashboard = True
             st.session_state.dashboard_content = dashboard
-            st.rerun()
-
-        # Detailed progress check button
-        if st.button("🔍 Check Question Coverage", key="check_coverage"):
-            coverage_results = services["topic_tracker"].verify_question_coverage()
-            
-            # Display results
-            st.write("### Detailed Question Coverage")
-            for topic, data in coverage_results.items():
-                topic_name = TOPIC_AREAS[topic]
-                st.write(f"**{topic_name}**: {data['covered']}/{data['total']} questions ({data['percentage']}%)")
-                
-            # Generate improved dashboard
-            improved_dashboard = services["summary_generator"].generate_progress_dashboard()
-            st.session_state.show_improved_dashboard = True
-            st.session_state.improved_dashboard_content = improved_dashboard
             st.rerun()
 
         # Display dashboard if requested
@@ -170,39 +138,13 @@ def add_sidebar_ui():
                     st.session_state.show_dashboard = False
                     st.rerun()
 
-        # Display improved dashboard if requested
-        if st.session_state.get("show_improved_dashboard", False):
-            with st.expander("Improved Progress Dashboard", expanded=True):
-                st.markdown(st.session_state.improved_dashboard_content)
-                
-                # Add download button
-                st.download_button(
-                    label="📥 Download Improved Report",
-                    data=st.session_state.improved_dashboard_content,
-                    file_name=f"ace_improved_report_{datetime.now().strftime('%Y%m%d')}.md",
-                    mime="text/markdown"
-                )
-                
-                if st.button("Close Improved Dashboard", key="close_improved_dashboard"):
-                    st.session_state.show_improved_dashboard = False
-                    st.rerun()
-
         st.markdown("---")
         
         # Resume section
         st.markdown("### Resume Progress")
         
-        # Load from Cookie button
-        if st.button("🔄 Resume from Cookie", key="load_cookie"):
-            result = services["session_manager"].restore_session(source="cookie")
-            if result["success"]:
-                st.success(result["message"])
-                st.rerun()
-            else:
-                st.error(result["message"])
-        
-        # Server restore section (if enabled)
-        st.markdown("### Resume from Server")
+        # Server restore section (priority method)
+        st.markdown("#### Resume from Server")
         session_id = st.text_input("Enter Session ID")
         if session_id and st.button("Load from Server", key="server_load"):
             result = services["session_manager"].restore_session(source="server", session_id=session_id)
@@ -213,7 +155,7 @@ def add_sidebar_ui():
                 st.error(result["message"])
         
         # File upload option
-        st.markdown("### Or Upload Progress File")
+        st.markdown("#### Or Upload Progress File")
         uploaded_file = st.file_uploader("Choose a saved progress file", type=["json"], key="progress_file")
         
         if uploaded_file is not None:
@@ -546,7 +488,7 @@ def main():
         * **Need Help?** - Click the "Need help?" button below any question to get a detailed explanation
         * **Examples** - Click the "Example" button to see sample responses for the current question
         * **Save Progress** - Save your work at any time using the sidebar option
-        * **Resume Later** - Upload your saved file to continue where you left off
+        * **Resume Later** - Use your session ID or upload your saved file to continue where you left off
         
         #### Navigation Tips
         
@@ -590,9 +532,9 @@ def main():
             
         with st.expander("Can I save my progress and continue later?"):
             st.write("""
-            Yes! Use the "Save Progress" button in the sidebar to save your current progress. When you return,
-            use the "Resume Progress" option to continue where you left off. Your progress is saved in your
-            browser, but you can also download a file backup if needed.
+            Yes! Use the "Save Progress" button in the sidebar to save your current progress. You'll receive a 
+            Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also
+            download a backup file if needed.
             """)
             
         with st.expander("What if I don't know the answer to a question?"):
@@ -619,6 +561,20 @@ def main():
             After completion, you'll receive a summary of your responses that you can download. 
             A notification will also be sent to your ARCOS implementation consultant, who will review 
             your responses and schedule a follow-up discussion to clarify any points as needed.
+            """)
+        
+        with st.expander("How do I resume a saved session?"):
+            st.write("""
+            To resume a saved session, you have two options:
+            
+            1. **Using Session ID**: Enter your Session ID in the sidebar and click "Load from Server". 
+               This is the recommended method if you saved your session ID when prompted.
+               
+            2. **Using a File**: If you downloaded a progress file, you can upload it in the sidebar
+               under "Upload Progress File" and then click "Load from File".
+            
+            The system will restore your conversation exactly where you left off, and the AI will remember
+            the context of your previous discussion.
             """)
 
 # Add sidebar UI
