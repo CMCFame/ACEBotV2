@@ -242,6 +242,13 @@ def main():
         if 'pending_help' not in st.session_state:
             st.session_state.pending_help = None
         
+        # Initialize button state trackers
+        if 'help_button_clicked' not in st.session_state:
+            st.session_state.help_button_clicked = False
+            
+        if 'example_button_clicked' not in st.session_state:
+            st.session_state.example_button_clicked = False
+        
         # Display chat history with special handling for examples
         for i, message in enumerate(st.session_state.visible_messages):
             # Skip messages that have been directly displayed already
@@ -398,11 +405,25 @@ def main():
                     st.success("Completion notification sent!")
                     st.session_state.completion_email_sent = True
         else:
-            # Add help/example buttons if not in summary mode
-            help_button, example_button = services["chat_ui"].add_help_example_buttons()
+            # Add help/example buttons if not in summary mode - REPLACED with callback versions
+            # help_button, example_button = services["chat_ui"].add_help_example_buttons()
+            
+            # Button callbacks
+            def on_help_click():
+                st.session_state.help_button_clicked = True
+                
+            def on_example_click():
+                st.session_state.example_button_clicked = True
+            
+            # Create buttons with callbacks
+            buttons_col1, buttons_col2 = st.columns(2)
+            with buttons_col1:
+                st.button("Need help?", key="help_button", on_click=on_help_click)
+            with buttons_col2:
+                st.button("Example", key="example_button", on_click=on_example_click)
             
             # Process help button click - UPDATED to use session state
-            if help_button:
+            if st.session_state.help_button_clicked:
                 # Get the current question context
                 last_question = None
                 for msg in reversed(st.session_state.visible_messages):
@@ -431,10 +452,14 @@ def main():
                 # Save the help response to session state
                 st.session_state.pending_help = help_response
                 
-                # No st.rerun() here
+                # Reset the button state
+                st.session_state.help_button_clicked = False
+                
+                # Force a rerun
+                st.rerun()
             
             # Process example button click - UPDATED to use session state
-            if example_button:
+            if st.session_state.example_button_clicked:
                 # Extract the last question from the assistant
                 last_question = None
                 for msg in reversed(st.session_state.visible_messages):
@@ -478,9 +503,15 @@ def main():
                         "question_text": last_question
                     }
                     
-                    # No st.rerun() here - we want to let the display happen naturally
+                    # Reset the button state
+                    st.session_state.example_button_clicked = False
+                    
+                    # Force a rerun
+                    st.rerun()
                 else:
                     st.error("Could not find a question to provide an example for.")
+                    st.session_state.example_button_clicked = False
+                    st.rerun()
             
             # Add input form
             user_input = services["chat_ui"].add_input_form()
@@ -538,7 +569,7 @@ def main():
                                 "question_text": last_question
                             }
                             
-                            # Force a rerun to display the user message
+                            # Force a rerun to show the user message immediately
                             st.rerun()
                         else:
                             st.error("Could not find a question to provide an example for.")
