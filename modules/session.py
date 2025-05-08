@@ -53,7 +53,7 @@ class SessionManager:
             "visible_messages": st.session_state.visible_messages,
             "topic_areas_covered": st.session_state.topic_areas_covered,
             "saved_timestamp": datetime.now().isoformat(),
-            "version": "3.0"  # Updated version for server-first approach
+            "version": "3.1"  # Updated version for enhanced context restoration
         }
     
     def _initialize_session_state(self):
@@ -80,6 +80,8 @@ class SessionManager:
         st.session_state.summary_requested = False
         st.session_state.explicitly_finished = False
         st.session_state.restoring_session = False
+        st.session_state.api_request_in_progress = False  # Added for progress indicator
+        st.session_state.theme = "light"  # Default theme setting
         
         # Add initial greeting that includes the first question
         welcome_message = "👋 Hello! This questionnaire is designed to help ARCOS solution consultants better understand your company's requirements. If you're unsure about any question, simply type a ? and I'll provide a brief explanation. You can also type 'example' or click the 'Example' button to see a sample response.\n\nLet's get started! Could you please provide your name and your company name?"
@@ -103,7 +105,9 @@ class SessionManager:
             clean_visible_messages = []
             for msg in session_data["visible_messages"]:
                 if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    clean_visible_messages.append({"role": msg["role"], "content": msg["content"]})
+                    # Remove any temporary flags used for display logic
+                    cleaned_msg = {"role": msg["role"], "content": msg["content"]}
+                    clean_visible_messages.append(cleaned_msg)
             session_data["visible_messages"] = clean_visible_messages
             
             # Try to save to server storage (primary method)
@@ -131,9 +135,40 @@ class SessionManager:
         except Exception as e:
             return {"success": False, "message": f"Error saving session: {str(e)}"}
     
+    def _find_topic_answers(self, session_data, topic):
+        """Find 1-2 sample answers for a given topic area to include in context."""
+        # Map topics to related keywords
+        topic_keywords = {
+            "basic_info": ["name", "company", "callout type", "situation"],
+            "staffing_details": ["employee", "staff", "role", "classification"],
+            "contact_process": ["contact first", "device", "call first", "phone"],
+            "list_management": ["list", "skip", "traverse", "straight down"],
+            "insufficient_staffing": ["required number", "don't get", "not enough"],
+            "calling_logistics": ["simultaneous", "call again", "second pass"],
+            "list_changes": ["change", "update", "overtime hours"],
+            "tiebreakers": ["tie", "tiebreaker", "seniority"],
+            "additional_rules": ["text alert", "email", "rule", "shift"]
+        }
+        
+        # Get related responses
+        sample_answers = []
+        
+        if "responses" in session_data:
+            for question, answer in session_data["responses"]:
+                # Check if this question relates to our topic
+                q_lower = question.lower()
+                if any(keyword in q_lower for keyword in topic_keywords.get(topic, [])):
+                    # Truncate long answers
+                    short_answer = answer[:50] + "..." if len(answer) > 50 else answer
+                    sample_answers.append(f"{short_answer}")
+                    if len(sample_answers) >= 2:  # Limit to 2 examples
+                        break
+        
+        return sample_answers if sample_answers else ["information provided"]
+    
     def restore_session(self, source="file", file_data=None, session_id=None):
         """
-        Restore a saved session from server or file.
+        Restore a saved session from server or file with enhanced context.
         
         Args:
             source: "server" or "file"
@@ -201,12 +236,36 @@ class SessionManager:
                 # Check if system prompt is first message, if not add it
                 if session_data["chat_history"][0].get("role") != "system":
                     session_data["chat_history"].insert(0, {"role": "system", "content": st.session_state.instructions})
+                    
+                # Get information about covered topics for enhanced context
+                covered_topics = []
+                missing_topics = []
+                recent_questions = []
                 
-                # Create a much more detailed context restoration message
+                # Gather information about topics
+                for topic, is_covered in session_data.get('topic_areas_covered', {}).items():
+                    if is_covered:
+                        # Find sample answers for this topic
+                        topic_answers = self._find_topic_answers(session_data, topic)
+                        if topic_answers:
+                            covered_topics.append(f"{TOPIC_AREAS[topic]}: {', '.join(topic_answers)}")
+                        else:
+                            covered_topics.append(f"{TOPIC_AREAS[topic]}")
+                    else:
+                        missing_topics.append(TOPIC_AREAS[topic])
+                
+                # Get the most recent questions and answers
+                if len(session_data.get("visible_messages", [])) >= 4:
+                    messages = session_data["visible_messages"][-4:]
+                    for msg in messages:
+                        if msg["role"] == "assistant" and "?" in msg["content"]:
+                            recent_questions.append(msg["content"])
+                        
+                # Get current and upcoming questions based on index
                 current_q_index = session_data.get('current_question_index', 0)
                 current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
                 
-                # Enhanced context restoration to help the AI understand exactly where we left off
+                # Create a much more detailed context restoration message
                 restoration_context = {
                     "role": "system",
                     "content": f"""
@@ -220,20 +279,25 @@ class SessionManager:
                     6. Last active timestamp: {session_data.get('saved_timestamp', 'unknown')}
                     
                     Topics already covered in detail:
-                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v])}
+                    {'; '.join(covered_topics)}
                     
                     Topics still needed:
-                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v])}
+                    {', '.join(missing_topics)}
+                    
+                    Recent conversation context:
+                    {'; '.join(recent_questions) if recent_questions else 'No recent questions found'}
                     
                     YOU MUST:
                     - Continue the conversation naturally from where it left off
                     - DO NOT repeat questions that have already been asked
-                    - FOCUS on gathering information about missing topics
+                    - FOCUS on gathering information about missing topics: {', '.join(missing_topics)}
                     - Acknowledge that the conversation is being resumed
                     - Maintain a friendly, conversational tone
                     - If the user seems confused, briefly remind them where you were in the conversation
                     - If you want to summarize what you've learned so far to help reestablish context, do so BRIEFLY (1-2 sentences max)
                     - Respect any previous statements about skipping certain questions or topics
+                    
+                    When a topic is marked as covered, it means the user has provided substantial information about it. However, you may still need to ask follow-up questions to get more specific details.
                     """
                 }
                 
@@ -269,6 +333,10 @@ class SessionManager:
             
             if "explicitly_finished" in session_data:
                 st.session_state.explicitly_finished = session_data["explicitly_finished"]
+            
+            # Restore theme setting if available
+            if "theme" in session_data:
+                st.session_state.theme = session_data["theme"]
             
             # Add a visible message informing the user that the session was restored
             st.session_state.visible_messages.append({

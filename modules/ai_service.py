@@ -1,6 +1,7 @@
 # modules/ai_service.py
 import openai
 import streamlit as st
+import time
 from config import OPENAI_MODEL, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 class AIService:
@@ -17,20 +18,75 @@ class AIService:
                 self.client = None
     
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
-        """Get a response from the OpenAI API."""
+        """Get a response from the OpenAI API with improved error handling."""
         if not self.client:
             return "Error: OpenAI client not initialized"
-            
-        try:
-            response = self.client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        except openai.APIError as e:
-            return f"Error: {e}"
+        
+        # Set the request in progress flag for UI indication
+        st.session_state.api_request_in_progress = True
+        
+        retry_count = 0
+        max_retries = 3
+        backoff_factor = 1.5
+        
+        while retry_count < max_retries:
+            try:
+                response = self.client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                # Clear the in-progress flag
+                st.session_state.api_request_in_progress = False
+                return response.choices[0].message.content.strip()
+            except openai.RateLimitError as e:
+                # Handle rate limiting with exponential backoff
+                retry_count += 1
+                if retry_count >= max_retries:
+                    st.session_state.api_request_in_progress = False
+                    return f"Error: API rate limit exceeded. Please try again in a few moments. Details: {e}"
+                
+                # Calculate backoff time: 2^retry_count seconds
+                backoff_time = backoff_factor ** retry_count
+                time.sleep(backoff_time)
+                print(f"Rate limit hit, retrying in {backoff_time} seconds...")
+                
+            except openai.APITimeoutError:
+                # Handle timeout errors
+                retry_count += 1
+                if retry_count >= max_retries:
+                    st.session_state.api_request_in_progress = False
+                    return "Error: The API request timed out. Please try again."
+                
+                time.sleep(2 * retry_count)  # Simple backoff
+                
+            except openai.APIConnectionError:
+                # Handle connection errors
+                retry_count += 1
+                if retry_count >= max_retries:
+                    st.session_state.api_request_in_progress = False
+                    return "Error: Could not connect to the OpenAI API. Please check your internet connection."
+                
+                time.sleep(2 * retry_count)  # Simple backoff
+                
+            except openai.APIError as e:
+                # General API errors
+                retry_count += 1
+                if retry_count >= max_retries:
+                    st.session_state.api_request_in_progress = False
+                    return f"Error from OpenAI API: {e}"
+                
+                time.sleep(1)  # Brief pause before retry
+                
+            except Exception as e:
+                # Unexpected errors
+                st.session_state.api_request_in_progress = False
+                return f"Unexpected error: {e}"
+                
+        # If we exit the loop without returning, something went wrong
+        st.session_state.api_request_in_progress = False
+        return "Error: Failed to get a response after multiple attempts."
     
     def extract_user_info(self, user_input):
         """Extract user name and company name from the first response."""
@@ -40,9 +96,9 @@ class AIService:
             {"role": "user", "content": f"User response: {user_input}\nExtract only the name and company. Format your response exactly as: NAME: [name], COMPANY: [company]. If you can only extract one of these, still provide it and use 'unknown' for the other."}
         ]
         
-        extract_response = self.get_response(extract_messages, max_tokens=100)
-        
         try:
+            extract_response = self.get_response(extract_messages, max_tokens=100)
+            
             # Parse the extraction response
             name_part = "unknown"
             company_part = "unknown"
@@ -65,13 +121,18 @@ class AIService:
     
     def check_response_type(self, question, user_input):
         """Determine if a user message is an answer or a question/request."""
-        messages = [
-            {"role": "system", "content": "You are helping to determine if a user message is an answer to a question or a request for help/clarification."},
-            {"role": "user", "content": f"Question: {question}\nUser message: {user_input}\nIs this a direct answer to the question or a request for help/clarification? Reply with exactly 'ANSWER' or 'QUESTION'."}
-        ]
-        
-        response = self.get_response(messages, max_tokens=50, temperature=0.1)
-        return "ANSWER" in response.upper()
+        try:
+            messages = [
+                {"role": "system", "content": "You are helping to determine if a user message is an answer to a question or a request for help/clarification."},
+                {"role": "user", "content": f"Question: {question}\nUser message: {user_input}\nIs this a direct answer to the question or a request for help/clarification? Reply with exactly 'ANSWER' or 'QUESTION'."}
+            ]
+            
+            response = self.get_response(messages, max_tokens=50, temperature=0.1)
+            return "ANSWER" in response.upper()
+        except Exception as e:
+            # In case of error, default to treating it as an answer
+            print(f"Error checking response type: {e}")
+            return True
     
     def process_special_message_types(self, user_input):
         """Process special message types like example requests."""
@@ -93,41 +154,53 @@ class AIService:
         if any(phrase in lower_input for phrase in ["already answered", "not helpful", "i already responded", "already responded"]):
             return {"type": "frustration", "subtype": "summary_request"}
             
+        # Check for theme change requests
+        if "dark mode" in lower_input or "dark theme" in lower_input:
+            return {"type": "theme_request", "theme": "dark"}
+            
+        if "light mode" in lower_input or "light theme" in lower_input:
+            return {"type": "theme_request", "theme": "light"}
+            
         # Default - regular input
         return {"type": "regular_input"}
         
     def get_example_response(self, last_question):
         """Get a consistently formatted example response with plain text formatting."""
-        # Modified system message to generate plain text format without HTML
-        system_message = """
-        You are providing an example answer to a question about utility company callout processes.
-        
-        Format your response exactly as follows:
-        
-        Example: [Your specific, detailed example relevant to utility companies]
-        
-        To continue with our question:
-        [Repeat or rephrase the original question]
-        
-        Do NOT use any HTML tags or special formatting in your response. Use only plain text.
-        The example should be specific, relevant to a utility company, and demonstrate a good answer.
-        """
-        
-        messages = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Provide an example answer for this question: {last_question}"}
-        ]
-        
-        example_response = self.get_response(messages, max_tokens=250, temperature=0.7)
-        
-        # Simple validation
-        if "Example:" not in example_response:
-            example_response = f"Example: A detailed example for utility companies related to this question.\n\nTo continue with our question:\n{last_question}"
+        try:
+            # Modified system message to generate plain text format without HTML
+            system_message = """
+            You are providing an example answer to a question about utility company callout processes.
             
-        if "To continue with our question:" not in example_response:
-            parts = example_response.split("\n\n")
-            if len(parts) > 0:
-                example_part = parts[0]
-                example_response = f"{example_part}\n\nTo continue with our question:\n{last_question}"
-        
-        return example_response
+            Format your response exactly as follows:
+            
+            Example: [Your specific, detailed example relevant to utility companies]
+            
+            To continue with our question:
+            [Repeat or rephrase the original question]
+            
+            Do NOT use any HTML tags or special formatting in your response. Use only plain text.
+            The example should be specific, relevant to a utility company, and demonstrate a good answer.
+            """
+            
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"Provide an example answer for this question: {last_question}"}
+            ]
+            
+            example_response = self.get_response(messages, max_tokens=250, temperature=0.7)
+            
+            # Simple validation
+            if "Example:" not in example_response:
+                example_response = f"Example: A detailed example for utility companies related to this question.\n\nTo continue with our question:\n{last_question}"
+                
+            if "To continue with our question:" not in example_response:
+                parts = example_response.split("\n\n")
+                if len(parts) > 0:
+                    example_part = parts[0]
+                    example_response = f"{example_part}\n\nTo continue with our question:\n{last_question}"
+            
+            return example_response
+        except Exception as e:
+            # Fallback in case of error
+            print(f"Error getting example response: {e}")
+            return f"Example: A utility company typically has standardized processes for this.\n\nTo continue with our question:\n{last_question}"

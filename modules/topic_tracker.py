@@ -160,6 +160,122 @@ class TopicTracker:
             "covered_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if v],
             "missing_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
         }
+    
+    def create_progress_dashboard_artifact(self):
+        """Create a React artifact for the progress dashboard."""
+        # Get current progress data
+        progress_data = self.get_progress_data()
+        
+        # Check for coverage information from questions as well
+        question_coverage = self.verify_question_coverage()
+        
+        # Serialize the data for the React component
+        progress_json = json.dumps({
+            "overall": progress_data,
+            "topicDetails": question_coverage
+        })
+        
+        # Generate the React component
+        artifact_content = f"""
+import React from 'react';
+
+const ProgressDashboard = () => {{
+  // Load progress data
+  const progressData = {progress_json};
+  const overall = progressData.overall;
+  const topicDetails = progressData.topicDetails;
+  
+  // Format percentage
+  const formatPct = (pct) => `${{pct}}%`;
+  
+  return (
+    <div className="p-4 bg-white rounded-lg shadow">
+      <h2 className="text-xl font-bold mb-4 text-center">ACE Questionnaire Progress</h2>
+      
+      {/* Overall progress */}
+      <div className="mb-4 p-3 bg-gray-100 rounded">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-gray-700 font-medium">Overall Completion</span>
+          <span className="font-bold">{{formatPct(overall.percentage)}}</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+          <div 
+            className="h-4 rounded-full bg-blue-500"
+            style={{{{width: `${{overall.percentage}}%`}}}}
+          ></div>
+        </div>
+        <div className="text-center mt-2 text-sm text-gray-600">
+          {{overall.covered_count}} of {{overall.total_count}} topic areas covered
+        </div>
+      </div>
+      
+      {/* Topic coverage list */}
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold mb-2">Topic Area Coverage</h3>
+        <div className="grid gap-3">
+          {{Object.entries(topicDetails).map(([topic, details]) => (
+            <div key={{topic}} className="p-2 border-b border-gray-200">
+              <div className="flex justify-between items-center mb-1">
+                <span className="font-medium">{{details.covered}}/{{details.total}} {{topic.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}}</span>
+                <span className="text-sm font-semibold">
+                  {{details.percentage < 100 ? 
+                    <span className="text-orange-500">In Progress</span> : 
+                    <span className="text-green-500">✓ Complete</span>}}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div 
+                  className={{`h-2 rounded-full ${{details.percentage < 100 ? 'bg-orange-400' : 'bg-green-500'}}`}}
+                  style={{{{width: `${{details.percentage}}%`}}}}
+                ></div>
+              </div>
+            </div>
+          ))}}
+        </div>
+      </div>
+      
+      {/* Topic status */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="p-3 bg-green-50 rounded border border-green-200">
+          <h3 className="text-base font-semibold mb-2 text-green-700">✓ Covered Topics</h3>
+          <ul className="list-disc pl-5 text-sm text-green-800 space-y-1">
+            {{overall.covered_topics.map(topic => (
+              <li key={{topic}}>{{topic}}</li>
+            ))}}
+          </ul>
+        </div>
+        
+        <div className="p-3 bg-yellow-50 rounded border border-yellow-200">
+          <h3 className="text-base font-semibold mb-2 text-yellow-700">⏳ Still Needed</h3>
+          <ul className="list-disc pl-5 text-sm text-yellow-800 space-y-1">
+            {{overall.missing_topics.length > 0 ?
+              overall.missing_topics.map(topic => (
+                <li key={{topic}}>{{topic}}</li>
+              )) :
+              <li>All topic areas covered!</li>
+            }}
+          </ul>
+        </div>
+      </div>
+      
+      <div className="text-center mt-4 text-xs text-gray-500">
+        Last updated: {{new Date().toLocaleString()}}
+      </div>
+    </div>
+  );
+};
+
+export default ProgressDashboard;
+        """
+        
+        # Return the artifact definition
+        return {
+            "command": "create",
+            "id": "progress-dashboard",
+            "type": "application/vnd.ant.react",
+            "title": "Progress Dashboard",
+            "content": artifact_content
+        }
         
     def verify_question_coverage(self):
         """Verify which specific questions have been answered."""
