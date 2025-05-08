@@ -34,15 +34,15 @@ def create_example_html(example_text, question_text):
     """Create formatted HTML for examples and questions."""
     return f"""
     <div style="display: flex; margin-bottom: 15px;">
-      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
-          <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
-          <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+      <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
+        <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+          <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
+          <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
         </div>
-        <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
-          <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
-          <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+        <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
+          <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
+          <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
         </div>
       </div>
     </div>
@@ -260,10 +260,10 @@ def main():
                 user_label = st.session_state.user_info.get("name", "You") or "You"
                 st.markdown(
                     f"""
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-                      <div style="background-color: #e6f7ff; border-radius: 15px 15px 0 15px; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                        <p style="margin: 0; color: #333;"><strong>{user_label}</strong></p>
-                        <p style="margin: 0; white-space: pre-wrap;">{message["content"]}</p>
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                      <div style="background-color: #e8f4f8; border-radius: 15px 15px 0 15px; padding: 12px 18px; max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;">
+                        <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">{user_label}</p>
+                        <p style="margin: 5px 0 0 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{message["content"]}</p>
                       </div>
                     </div>
                     """,
@@ -277,9 +277,13 @@ def main():
                     help_text = content.replace("I need help with this question", "").strip()
                     st.markdown(
                         f"""
-                        <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
-                          <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
-                          <p style="margin: 10px 0 0 0;">{help_text}</p>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #17a2b8;">
+                            <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
+                            <div style="margin-top: 8px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
+                            </div>
+                          </div>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -289,10 +293,10 @@ def main():
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
-                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #4e8cff;">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <div style="margin-top: 10px;">
-                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd;">{content}</p>
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-left: 5px solid #4e8cff;">
+                            <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">🔄 Session Restored</p>
+                            <div style="margin-top: 8px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd; line-height: 1.5;">{content}</p>
                             </div>
                           </div>
                         </div>
@@ -303,11 +307,11 @@ def main():
                 else:
                     st.markdown(
                         f"""
-                        <div style="display: flex; margin-bottom: 10px;">
-                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                            <div style="margin-top: 5px;">
-                              <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;">
+                            <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+                            <div style="margin-top: 8px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p>
                             </div>
                           </div>
                         </div>
@@ -322,9 +326,13 @@ def main():
             # Render the help box
             st.markdown(
                 f"""
-                <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
-                  <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
-                  <p style="margin: 10px 0 0 0;">{help_text}</p>
+                <div style="display: flex; margin-bottom: 15px;">
+                  <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #17a2b8;">
+                    <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
+                    <div style="margin-top: 8px;">
+                      <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
+                    </div>
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -348,15 +356,15 @@ def main():
             st.markdown(
                 f"""
                 <div style="display: flex; margin-bottom: 15px;">
-                  <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                    <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                    <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
-                      <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
-                      <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+                  <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
+                    <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+                    <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+                      <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
+                      <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
                     </div>
-                    <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
-                      <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
-                      <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+                    <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
+                      <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
+                      <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
                     </div>
                   </div>
                 </div>
