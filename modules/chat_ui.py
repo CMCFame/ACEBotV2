@@ -12,124 +12,94 @@ class ChatUI:
     def display_chat_history(self):
         """Display the chat history with styled messages and improved example formatting."""
         for message in st.session_state.visible_messages:
-            # Skip messages that have been directly displayed already
-            if message.get("already_displayed"):
-                continue
-                
-            # Render message based on type
+            # USER MESSAGES
             if message["role"] == "user":
-                self.render_user_message(message)
+                user_label = st.session_state.user_info.get("name", "You") or "You"
+                st.markdown(
+                    f"""
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                      <div style="background-color: #e6f7ff; border-radius: 15px 15px 0 15px; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>{user_label}</strong></p>
+                        <p style="margin: 0; white-space: pre-wrap;">{message["content"]}</p>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # ASSISTANT MESSAGES
             elif message["role"] == "assistant":
-                self._render_assistant_message(message)
-    
-    def render_user_message(self, message):
-        """Render a user message with consistent styling."""
-        user_label = st.session_state.user_info.get("name", "You") or "You"
-        st.markdown(
-            f"""
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-              <div style="background-color: #e8f4f8; border-radius: 15px 15px 0 15px; padding: 12px 18px; max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;">
-                <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">{user_label}</p>
-                <p style="margin: 5px 0 0 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{message["content"]}</p>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-    def _render_assistant_message(self, message):
-        """Route assistant message to appropriate renderer based on content."""
-        content = message["content"]
-        
-        # Help box
-        if "I need help with this question" in content:
-            self.render_help_message(content)
-        # Welcome back message (session restoration)
-        elif "Welcome back!" in content and "I've restored your previous session" in content:
-            self.render_welcome_back_message(content)
-        # Example message with special formatting
-        elif "*Example:" in content or "Example:" in content:
-            self._display_example_and_question(content)
-        # Regular assistant message
-        else:
-            self.render_assistant_message(content)
+                content = message["content"]
+                
+                # Check if content contains HTML tags (indicating raw HTML)
+                if "<div" in content or "<p" in content or "</div>" in content:
+                    # Escape HTML to show as plain text
+                    content = html.escape(content)
+                    
+                    # Create a regular assistant message with the escaped content
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 5px;">
+                              <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                # HELP BOX
+                elif "I need help with this question" in content:
+                    help_text = content.replace("I need help with this question", "").strip()
+                    st.markdown(
+                        f"""
+                        <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
+                          <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
+                          <p style="margin: 10px 0 0 0;">{help_text}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-    def render_assistant_message(self, content):
-        """Render a standard assistant message."""
-        st.markdown(
-            f"""
-            <div style="display: flex; margin-bottom: 15px;">
-              <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;">
-                <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
-                <div style="margin-top: 8px;">
-                  <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p>
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-    def render_help_message(self, content):
-        """Render a help message with special styling."""
-        help_text = content.replace("I need help with this question", "").strip()
-        st.markdown(
-            f"""
-            <div style="display: flex; margin-bottom: 15px;">
-              <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #17a2b8;">
-                <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
-                <div style="margin-top: 8px;">
-                  <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    
-    def render_welcome_back_message(self, content):
-        """Render a welcome back message with special styling."""
-        st.markdown(
-            f"""
-            <div style="display: flex; margin-bottom: 15px;">
-              <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-left: 5px solid #4e8cff;">
-                <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">🔄 Session Restored</p>
-                <div style="margin-top: 8px;">
-                  <p style="margin: 0; white-space: pre-wrap; color: #0d6efd; line-height: 1.5;">{content}</p>
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    
-    def render_example(self, example_text, question_text):
-        """Render an example and question box with enhanced styling."""
-        st.markdown(
-            f"""
-            <div style="display: flex; margin-bottom: 15px;">
-              <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
-                <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
-                <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
-                  <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
-                  <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
-                </div>
-                <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
-                  <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
-                  <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+                # ENHANCED EXAMPLE & QUESTION BOX
+                elif "*Example:" in content or "Example:" in content:
+                    # Process with new more robust parsing
+                    self._display_example_and_question(content)
+                    
+                # WELCOME BACK MESSAGE (SESSION RESTORATION)
+                elif "Welcome back!" in content and "I've restored your previous session" in content:
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #4e8cff;">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 10px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-        # Mark this as displayed in the UI
-        st.session_state.visible_messages.append({
-            "role": "assistant", 
-            "content": f"Example: {example_text}\n\nTo continue with our question:\n{question_text}",
-            "already_displayed": True
-        })
+                # REGULAR ASSISTANT MESSAGE
+                else:
+                    # Create a clean, simple HTML structure for the message
+                    assistant_message_html = f"""
+                    <div style="display: flex; margin-bottom: 10px;">
+                      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                        <div style="margin-top: 5px;">
+                          <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                        </div>
+                      </div>
+                    </div>
+                    """
+                    
+                    # Render the HTML
+                    st.markdown(assistant_message_html, unsafe_allow_html=True)
     
     def _display_example_and_question(self, content):
         """
@@ -188,8 +158,37 @@ class ChatUI:
         if not question_text and remaining:
             question_text = remaining
         
-        # Use the specialized example renderer
-        self.render_example(example_text, question_text)
+        # Create HTML with clear visual distinction between example and question
+        html = f"""
+        <div style="display: flex; margin-bottom: 15px;">
+          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+        """
+        
+        # Only add example box if example was found
+        if example_text:
+            html += f"""
+            <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+              <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
+              <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+            </div>
+            """
+        
+        # Add question part if found
+        if question_text:
+            html += f"""
+            <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
+              <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
+              <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+            </div>
+            """
+        
+        html += """
+          </div>
+        </div>
+        """
+        
+        st.markdown(html, unsafe_allow_html=True)
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
@@ -299,32 +298,3 @@ class ChatUI:
         else:
             # Provide a brief instruction and the finalize button
             st.info("Please click the FINALIZE QUESTIONNAIRE button above to complete the process and view your summary.")
-    
-    def render_progress_indicator(self):
-        """Render a subtle progress indicator during API requests."""
-        if st.session_state.get("api_request_in_progress", False):
-            st.markdown(
-                """
-                <div style="display: flex; justify-content: center; margin: 15px 0;">
-                    <div style="display: flex; align-items: center; background-color: #f8f9fa; padding: 8px 15px; border-radius: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <div class="loading-spinner"></div>
-                        <span style="margin-left: 10px; color: #555;">Thinking...</span>
-                    </div>
-                </div>
-                <style>
-                    .loading-spinner {
-                        width: 18px;
-                        height: 18px;
-                        border: 3px solid #eee;
-                        border-top: 3px solid #3498db;
-                        border-radius: 50%;
-                        animation: spin 1s linear infinite;
-                    }
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                </style>
-                """,
-                unsafe_allow_html=True
-            )

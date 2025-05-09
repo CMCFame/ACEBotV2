@@ -1,49 +1,8 @@
-/* assets/style.css */
 /* Custom styling for the ACE Questionnaire app */
-
-/* Variable definitions for theming */
-:root {
-    --primary-red: #D22B2B;
-    --light-red: #FFEEEE;
-    --primary-blue: #4e8cff;
-    --light-blue: #e8f4f8;
-    --primary-bg: #ffffff;
-    --secondary-bg: #f8f9fa;
-    --text-primary: #333333;
-    --text-secondary: #555555;
-    --border-light: #e9ecef;
-    --border-accent: #d1e7f0;
-    --box-shadow: rgba(0, 0, 0, 0.1);
-}
-
-/* Dark theme variables */
-.dark-theme {
-    --primary-red: #ff5757;
-    --light-red: #3d2a2a;
-    --primary-blue: #4e8cff;
-    --light-blue: #263547;
-    --primary-bg: #1e1e1e;
-    --secondary-bg: #2d2d2d;
-    --text-primary: #f0f0f0;
-    --text-secondary: #c0c0c0;
-    --border-light: #3a3a3a;
-    --border-accent: #2e4254;
-    --box-shadow: rgba(0, 0, 0, 0.3);
-}
 
 /* Main container and general styles */
 .main {
     padding: 20px;
-    background-color: var(--primary-bg);
-    color: var(--text-primary);
-    transition: all 0.3s ease;
-}
-
-/* Apply theme to the entire document */
-body {
-    background-color: var(--primary-bg);
-    color: var(--text-primary);
-    transition: all 0.3s ease;
 }
 
 /* Improve form button styling */
@@ -58,17 +17,15 @@ div[data-testid="stForm"] button {
 
 div[data-testid="stForm"] button:hover {
     background-color: #1b5e20;
-    box-shadow: 0 2px 5px var(--box-shadow);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 /* Style text inputs */
 div[data-testid="stTextInput"] input {
     border-radius: 8px;
-    border: 1px solid var(--border-light);
+    border: 1px solid #ddd;
     padding: 10px 15px;
     transition: border 0.3s;
-    background-color: var(--primary-bg);
-    color: var(--text-primary);
 }
 
 div[data-testid="stTextInput"] input:focus {
@@ -89,27 +46,27 @@ div[data-testid="stTextInput"] input:focus {
 
 .stDownloadButton button:hover {
     background-color: #1565c0;
-    box-shadow: 0 2px 5px var(--box-shadow);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 /* Style the sidebar */
 section[data-testid="stSidebar"] {
-    background-color: var(--secondary-bg);
-    border-right: 1px solid var(--border-light);
+    background-color: #f8f9fa;
+    border-right: 1px solid #eee;
 }
 
 /* Make help button more prominent */
 button[data-testid="baseButton-secondary"] {
-    background-color: var(--secondary-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border-light);
+    background-color: #f5f5f5;
+    color: #333;
+    border: 1px solid #ddd;
     border-radius: 20px;
     transition: all 0.3s;
 }
 
 button[data-testid="baseButton-secondary"]:hover {
-    background-color: var(--border-light);
-    box-shadow: 0 2px 5px var(--box-shadow);
+    background-color: #e0e0e0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 /* Enhanced styling for example boxes */
@@ -156,55 +113,55 @@ button[data-testid="baseButton-secondary"]:hover {
 
 /* Welcome back message styling */
 .welcome-back {
-    background-color: var(--light-blue);
+    background-color: #e8f4f8;
     border-radius: 10px;
     padding: 15px;
     margin: 15px 0;
-    border-left: 5px solid var(--primary-blue);
+    border-left: 5px solid #4e8cff;
     color: #0d6efd;
 }
 
 /* Session ID display */
 .session-id {
     font-family: monospace;
-    background-color: var(--secondary-bg);
+    background-color: #f0f0f0;
     border-radius: 4px;
     padding: 8px 12px;
-    border: 1px solid var(--border-light);
+    border: 1px solid #ddd;
     font-size: 16px;
     letter-spacing: 1px;
     text-align: center;
     margin: 10px 0;
-    color: var(--text-primary);
+    color: #333;
 }
 
 /* Copy button styling */
 .copy-button {
-    background-color: var(--secondary-bg);
-    border: 1px solid var(--border-light);
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;
-    color: var(--text-secondary);
+    color: #555;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .copy-button:hover {
-    background-color: var(--border-light);
-    color: var(--text-primary);
+    background-color: #e9ecef;
+    color: #333;
 }
 
 /* Visual separator for example and question */
 .content-separator {
     height: 1px;
-    background-color: var(--border-light);
+    background-color: #e0e0e0;
     margin: 15px 0;
 }
 
 /* Special styling for help responses */
 .help-box {
-    background-color: var(--secondary-bg);
+    background-color: #f8f9fa;
     border-radius: 10px;
     padding: 15px;
     margin: 15px 0;
@@ -218,144 +175,6 @@ button[data-testid="baseButton-secondary"]:hover {
 }
 
 .help-content {
-    color: var(--text-primary);
+    color: #333;
     margin-top: 8px;
-}
-
-/* Loading spinner animation */
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.loading-spinner {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 3px solid var(--border-light);
-    border-top: 3px solid var(--primary-blue);
-    animation: spin 1s linear infinite;
-    display: inline-block;
-    margin-right: 8px;
-    vertical-align: middle;
-}
-
-/* Theme toggle button styling */
-.theme-toggle {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background-color: var(--primary-bg);
-    border: 2px solid var(--border-light);
-    box-shadow: 0 2px 10px var(--box-shadow);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 1000;
-    transition: all 0.3s;
-}
-
-.theme-toggle:hover {
-    transform: scale(1.1);
-}
-
-.theme-toggle-icon {
-    font-size: 24px;
-    color: var(--text-primary);
-}
-
-/* Mobile-friendly adjustments */
-@media screen and (max-width: 768px) {
-    /* Reduce padding and max-width for messages */
-    div[style*="padding: 12px 18px"] {
-        padding: 8px 12px !important;
-        max-width: 95% !important;
-    }
-    
-    /* Make message boxes full width on mobile */
-    div[style*="max-width: 80%"], 
-    div[style*="max-width: 85%"], 
-    div[style*="width: 90%"],
-    div[style*="width: 85%"] {
-        max-width: 95% !important;
-        width: 95% !important;
-    }
-    
-    /* Reduce font sizes for better mobile display */
-    p[style*="font-size: 15px"] {
-        font-size: 14px !important;
-    }
-    
-    /* Stack buttons on mobile */
-    div[data-testid="column"] {
-        width: 100% !important;
-        flex: 0 1 100% !important;
-        margin-bottom: 10px !important;
-    }
-    
-    /* Improve spacing for mobile */
-    div[style*="margin-bottom: 15px"] {
-        margin-bottom: 10px !important;
-    }
-    
-    /* Make example and question boxes more compact */
-    div[style*="border-radius: 10px"] {
-        padding: 10px !important;
-    }
-    
-    /* Adjust main padding */
-    .main {
-        padding: 10px;
-    }
-    
-    /* Responsive form adjustments */
-    div[data-testid="stForm"] {
-        padding: 0 !important;
-    }
-    
-    /* Make text inputs take full width */
-    div[data-testid="stTextInput"] {
-        width: 100% !important;
-    }
-    
-    /* Adjust download buttons for mobile */
-    .stDownloadButton button {
-        width: 100%;
-        margin-bottom: 10px;
-    }
-    
-    /* Position theme toggle in a better spot for mobile */
-    .theme-toggle {
-        bottom: 10px;
-        right: 10px;
-        width: 40px;
-        height: 40px;
-    }
-}
-
-/* Printed layout adjustments */
-@media print {
-    body * {
-        visibility: hidden;
-    }
-    
-    .main-content, .main-content * {
-        visibility: visible;
-    }
-    
-    .main-content {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-    }
-    
-    /* Hide all buttons and interface elements */
-    button, .theme-toggle, div[data-testid="stSidebar"] {
-        display: none !important;
-    }
 }
