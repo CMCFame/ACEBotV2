@@ -14,7 +14,7 @@ import os
 import json
 from datetime import datetime
 
-# Continue with other imports
+# Continue with other imports with better error handling
 try:
     from modules.session import SessionManager
     from modules.ai_service import AIService
@@ -181,15 +181,18 @@ def add_sidebar_ui():
         # Progress dashboard button
         if st.button("📊 View Progress Dashboard", key="view_progress"):
             # Generate the progress dashboard artifact
-            artifact = services["topic_tracker"].create_progress_dashboard_artifact()
-            st.session_state.show_dashboard = True
-            
-            # Also generate a text version for the sidebar
-            dashboard = services["summary_generator"].generate_progress_dashboard()
-            st.session_state.dashboard_content = dashboard
-            
-            # Force a rerun to show the dashboard
-            st.rerun()
+            try:
+                artifact = services["topic_tracker"].create_progress_dashboard_artifact()
+                st.session_state.show_dashboard = True
+                
+                # Also generate a text version for the sidebar
+                dashboard = services["summary_generator"].generate_progress_dashboard()
+                st.session_state.dashboard_content = dashboard
+                
+                # Force a rerun to show the dashboard
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error creating dashboard: {e}")
 
         # Display dashboard if requested
         if st.session_state.get("show_dashboard", False):
@@ -208,15 +211,19 @@ def add_sidebar_ui():
                     )
                 except Exception as e:
                     # Fallback to text dashboard if artifacts function not available
-                    st.markdown(st.session_state.dashboard_content)
+                    if hasattr(st.session_state, 'dashboard_content'):
+                        st.markdown(st.session_state.dashboard_content)
+                    else:
+                        st.error(f"Could not display dashboard: {e}")
                 
                 # Add download button
-                st.download_button(
-                    label="📥 Download Progress Report",
-                    data=st.session_state.dashboard_content,
-                    file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
-                    mime="text/markdown"
-                )
+                if hasattr(st.session_state, 'dashboard_content'):
+                    st.download_button(
+                        label="📥 Download Progress Report",
+                        data=st.session_state.dashboard_content,
+                        file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
+                        mime="text/markdown"
+                    )
                 
                 if st.button("Close Dashboard", key="close_dashboard"):
                     st.session_state.show_dashboard = False
@@ -334,8 +341,11 @@ def main():
         
         # Display progress bar if beyond first question
         if st.session_state.current_question_index > 0:
-            progress_data = services["topic_tracker"].get_progress_data()
-            services["chat_ui"].display_progress_bar(progress_data)
+            try:
+                progress_data = services["topic_tracker"].get_progress_data()
+                services["chat_ui"].display_progress_bar(progress_data)
+            except Exception as e:
+                st.warning(f"Could not display progress bar: {e}")
         
         # Show progress indicator during API requests
         services["chat_ui"].render_progress_indicator()
@@ -356,16 +366,19 @@ def main():
             
             # Send completion email if not already sent
             if st.session_state.get("explicitly_finished", False) and not st.session_state.get("completion_email_sent", False):
-                email_result = services["email_service"].send_notification(
-                    st.session_state.user_info, 
-                    responses, 
-                    services["export_service"], 
-                    completed=True
-                )
-                
-                if email_result["success"]:
-                    st.success("Completion notification sent!")
-                    st.session_state.completion_email_sent = True
+                try:
+                    email_result = services["email_service"].send_notification(
+                        st.session_state.user_info, 
+                        responses, 
+                        services["export_service"], 
+                        completed=True
+                    )
+                    
+                    if email_result["success"]:
+                        st.success("Completion notification sent!")
+                        st.session_state.completion_email_sent = True
+                except Exception as e:
+                    st.warning(f"Could not send completion email: {e}")
         else:
             # Button callbacks
             def on_help_click():
@@ -487,226 +500,231 @@ def main():
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
                 else:
-                    # Process special message types
-                    message_type = services["ai_service"].process_special_message_types(user_input)
-                    
-                    # Handle theme change requests
-                    if message_type["type"] == "theme_request":
-                        st.session_state.theme = message_type.get("theme", "light")
+                    try:
+                        # Process special message types
+                        message_type = services["ai_service"].process_special_message_types(user_input)
                         
-                        # Add user message to chat history
-                        st.session_state.chat_history.append({"role": "user", "content": user_input})
-                        st.session_state.visible_messages.append({"role": "user", "content": user_input})
-                        
-                        # Add assistant response
-                        theme_name = "dark" if message_type.get("theme") == "dark" else "light"
-                        response = f"I've switched to {theme_name} mode for you. Let me know if you need anything else!"
-                        st.session_state.chat_history.append({"role": "assistant", "content": response})
-                        st.session_state.visible_messages.append({"role": "assistant", "content": response})
-                        
-                        # Force rerun to apply theme
-                        st.rerun()
-                    
-                    elif message_type["type"] == "example_request":
-                        # Extract the last question from the assistant
-                        last_question = None
-                        for msg in reversed(st.session_state.visible_messages):
-                            if msg["role"] == "assistant" and "?" in msg["content"]:
-                                sentences = msg["content"].split(". ")
-                                for sentence in reversed(sentences):
-                                    if "?" in sentence:
-                                        last_question = sentence.strip()
-                                        break
-                                if last_question:
-                                    break
-                        
-                        if not last_question:
-                            # Fallback to the last assistant message
-                            for msg in reversed(st.session_state.visible_messages):
-                                if msg["role"] == "assistant":
-                                    last_question = msg["content"]
-                                    break
-                        
-                        if last_question:
-                            # Begin API request
-                            st.session_state.api_request_in_progress = True
+                        # Handle theme change requests
+                        if message_type["type"] == "theme_request":
+                            st.session_state.theme = message_type.get("theme", "light")
                             
-                            # Get a simple example without any formatting
-                            example_messages = [
-                                {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
-                                {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
-                            ]
-                            
-                            example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
-                            
-                            # Add to chat history
+                            # Add user message to chat history
                             st.session_state.chat_history.append({"role": "user", "content": user_input})
-                            
-                            # Store the response in chat history
-                            st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
-                            
-                            # Add user message to visible messages
                             st.session_state.visible_messages.append({"role": "user", "content": user_input})
                             
-                            # Save the example in session state for rendering
-                            st.session_state.pending_example = {
-                                "example_text": example_text,
-                                "question_text": last_question
-                            }
+                            # Add assistant response
+                            theme_name = "dark" if message_type.get("theme") == "dark" else "light"
+                            response = f"I've switched to {theme_name} mode for you. Let me know if you need anything else!"
+                            st.session_state.chat_history.append({"role": "assistant", "content": response})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": response})
                             
-                            # Force a rerun to show the user message immediately
-                            st.rerun()
-                        else:
-                            st.error("Could not find a question to provide an example for.")
+                            # Force rerun to apply theme
                             st.rerun()
                         
-                    elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
-                        # Handle summary request
-                        force_summary = message_type["type"] == "frustration" or st.session_state.get("previous_summary_request", False)
-                        
-                        # Track that user has requested summary before
-                        st.session_state["previous_summary_request"] = True
-                        
-                        # Add user message to chat history
-                        st.session_state.chat_history.append({"role": "user", "content": user_input})
-                        st.session_state.visible_messages.append({"role": "user", "content": user_input})
-                        
-                        # Force summary if user is showing frustration
-                        if force_summary:
-                            st.session_state.summary_requested = True
+                        elif message_type["type"] == "example_request":
+                            # Extract the last question from the assistant
+                            last_question = None
+                            for msg in reversed(st.session_state.visible_messages):
+                                if msg["role"] == "assistant" and "?" in msg["content"]:
+                                    sentences = msg["content"].split(". ")
+                                    for sentence in reversed(sentences):
+                                        if "?" in sentence:
+                                            last_question = sentence.strip()
+                                            break
+                                    if last_question:
+                                        break
                             
-                            # Force all topics to be marked as covered
-                            for topic in st.session_state.topic_areas_covered:
-                                st.session_state.topic_areas_covered[topic] = True
+                            if not last_question:
+                                # Fallback to the last assistant message
+                                for msg in reversed(st.session_state.visible_messages):
+                                    if msg["role"] == "assistant":
+                                        last_question = msg["content"]
+                                        break
+                            
+                            if last_question:
+                                # Begin API request
+                                st.session_state.api_request_in_progress = True
                                 
-                            # Add a response from assistant
-                            summary_confirm = "I'll prepare a summary of your responses. You can download it below."
-                            st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
-                        else:
-                            # Check if ready for summary
-                            summary_readiness = services["topic_tracker"].check_summary_readiness()
+                                # Get a simple example without any formatting
+                                example_messages = [
+                                    {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
+                                    {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
+                                ]
+                                
+                                example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
+                                
+                                # Add to chat history
+                                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                                
+                                # Store the response in chat history
+                                st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
+                                
+                                # Add user message to visible messages
+                                st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                                
+                                # Save the example in session state for rendering
+                                st.session_state.pending_example = {
+                                    "example_text": example_text,
+                                    "question_text": last_question
+                                }
+                                
+                                # Force a rerun to show the user message immediately
+                                st.rerun()
+                            else:
+                                st.error("Could not find a question to provide an example for.")
+                                st.rerun()
                             
-                            if summary_readiness["ready"]:
+                        elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
+                            # Handle summary request
+                            force_summary = message_type["type"] == "frustration" or st.session_state.get("previous_summary_request", False)
+                            
+                            # Track that user has requested summary before
+                            st.session_state["previous_summary_request"] = True
+                            
+                            # Add user message to chat history
+                            st.session_state.chat_history.append({"role": "user", "content": user_input})
+                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                            
+                            # Force summary if user is showing frustration
+                            if force_summary:
                                 st.session_state.summary_requested = True
+                                
+                                # Force all topics to be marked as covered
+                                for topic in st.session_state.topic_areas_covered:
+                                    st.session_state.topic_areas_covered[topic] = True
+                                    
+                                # Add a response from assistant
                                 summary_confirm = "I'll prepare a summary of your responses. You can download it below."
                                 st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                             else:
-                                # Not ready - inform about missing topics/questions
-                                st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
-                                st.session_state.visible_messages.append({"role": "assistant", "content": summary_readiness["message"]})
-                        
-                        st.rerun()
-                        
-                    elif message_type["type"] == "help_request":
-                        # Handle help request
-                        # Get the current question context
-                        last_question = None
-                        for msg in reversed(st.session_state.visible_messages):
-                            if msg["role"] == "assistant" and "?" in msg["content"]:
-                                last_question = msg["content"]
-                                break
-                        
-                        if not last_question:
-                            # Fallback to the last assistant message
+                                # Check if ready for summary
+                                summary_readiness = services["topic_tracker"].check_summary_readiness()
+                                
+                                if summary_readiness["ready"]:
+                                    st.session_state.summary_requested = True
+                                    summary_confirm = "I'll prepare a summary of your responses. You can download it below."
+                                    st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
+                                    st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
+                                else:
+                                    # Not ready - inform about missing topics/questions
+                                    st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
+                                    st.session_state.visible_messages.append({"role": "assistant", "content": summary_readiness["message"]})
+                            
+                            st.rerun()
+                            
+                        elif message_type["type"] == "help_request":
+                            # Handle help request
+                            # Get the current question context
+                            last_question = None
                             for msg in reversed(st.session_state.visible_messages):
-                                if msg["role"] == "assistant":
+                                if msg["role"] == "assistant" and "?" in msg["content"]:
                                     last_question = msg["content"]
                                     break
-                        
-                        # Begin API request
-                        st.session_state.api_request_in_progress = True
-                        
-                        # Create help message context
-                        help_messages = st.session_state.chat_history.copy()
-                        help_messages.append({
-                            "role": "system", 
-                            "content": f"The user is asking for help with the CURRENT question which is: '{last_question}'. Provide a helpful explanation specifically for THIS question, not a previous one."
-                        })
-                        help_messages.append({"role": "user", "content": "I need help with this question"})
-                        
-                        # Get AI response
-                        help_response = services["ai_service"].get_response(help_messages)
-                        
-                        # Add help interaction to chat history
-                        st.session_state.chat_history.append({"role": "user", "content": user_input})
-                        st.session_state.chat_history.append({"role": "assistant", "content": help_response})
-                        
-                        # Add user message to visible messages
-                        st.session_state.visible_messages.append({"role": "user", "content": user_input})
-                        
-                        # Save the help response to session state
-                        st.session_state.pending_help = help_response
-                        
-                        # Force a rerun
-                        st.rerun()
-                        
-                    else:
-                        # Regular input - add to chat history
-                        st.session_state.chat_history.append({"role": "user", "content": user_input})
-                        st.session_state.visible_messages.append({"role": "user", "content": user_input})
-                        
-                        # Begin API request
-                        st.session_state.api_request_in_progress = True
-                        
-                        # Get AI response
-                        ai_response = services["ai_service"].get_response(st.session_state.chat_history)
-                        
-                        # Process special message formats from the AI
-                        is_topic_update = services["topic_tracker"].process_topic_update(ai_response)
-                        
-                        if not is_topic_update:
-                            # Add the response to visible messages
-                            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": ai_response})
                             
-                            # Force a topic update message after each regular response
-                            topic_check_messages = st.session_state.chat_history.copy()
-                            topic_check_messages.append({
+                            if not last_question:
+                                # Fallback to the last assistant message
+                                for msg in reversed(st.session_state.visible_messages):
+                                    if msg["role"] == "assistant":
+                                        last_question = msg["content"]
+                                        break
+                            
+                            # Begin API request
+                            st.session_state.api_request_in_progress = True
+                            
+                            # Create help message context
+                            help_messages = st.session_state.chat_history.copy()
+                            help_messages.append({
                                 "role": "system", 
-                                "content": "Based on all conversation so far, which topics have been covered? Respond ONLY with a TOPIC_UPDATE message that includes the status of ALL topic areas."
+                                "content": f"The user is asking for help with the CURRENT question which is: '{last_question}'. Provide a helpful explanation specifically for THIS question, not a previous one."
                             })
+                            help_messages.append({"role": "user", "content": "I need help with this question"})
                             
-                            topic_update_response = services["ai_service"].get_response(topic_check_messages)
-                            services["topic_tracker"].process_topic_update(topic_update_response)
-                        
-                        # For the first question, extract user and company name
-                        if st.session_state.current_question_index == 0:
-                            user_info = services["ai_service"].extract_user_info(user_input)
+                            # Get AI response
+                            help_response = services["ai_service"].get_response(help_messages)
                             
-                            # Only update if we found something useful
-                            if user_info["name"] or user_info["company"]:
-                                st.session_state.user_info = user_info
+                            # Add help interaction to chat history
+                            st.session_state.chat_history.append({"role": "user", "content": user_input})
+                            st.session_state.chat_history.append({"role": "assistant", "content": help_response})
+                            
+                            # Add user message to visible messages
+                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                            
+                            # Save the help response to session state
+                            st.session_state.pending_help = help_response
+                            
+                            # Force a rerun
+                            st.rerun()
+                            
+                        else:
+                            # Regular input - add to chat history
+                            st.session_state.chat_history.append({"role": "user", "content": user_input})
+                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                            
+                            # Begin API request
+                            st.session_state.api_request_in_progress = True
+                            
+                            # Get AI response
+                            ai_response = services["ai_service"].get_response(st.session_state.chat_history)
+                            
+                            # Process special message formats from the AI
+                            is_topic_update = services["topic_tracker"].process_topic_update(ai_response)
+                            
+                            if not is_topic_update:
+                                # Add the response to visible messages
+                                st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+                                st.session_state.visible_messages.append({"role": "assistant", "content": ai_response})
                                 
-                                # Add this information to the AI context
-                                context_message = {
+                                # Force a topic update message after each regular response
+                                topic_check_messages = st.session_state.chat_history.copy()
+                                topic_check_messages.append({
                                     "role": "system", 
-                                    "content": f"The user's name is {user_info['name'] or 'not provided yet'} and they work for {user_info['company'] or 'a company that has not been mentioned yet'}. If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided."
-                                }
-                                st.session_state.chat_history.append(context_message)
-                        
-                        # Check if this is an answer to the current question
-                        if st.session_state.current_question_index < len(st.session_state.questions):
-                            is_answer = services["ai_service"].check_response_type(
-                                st.session_state.current_question, 
-                                user_input
-                            )
+                                    "content": "Based on all conversation so far, which topics have been covered? Respond ONLY with a TOPIC_UPDATE message that includes the status of ALL topic areas."
+                                })
+                                
+                                topic_update_response = services["ai_service"].get_response(topic_check_messages)
+                                services["topic_tracker"].process_topic_update(topic_update_response)
                             
-                            if is_answer:
-                                # Store answer and advance to next question
-                                st.session_state.responses.append((st.session_state.current_question, user_input))
-                                st.session_state.current_question_index += 1
-                                if st.session_state.current_question_index < len(st.session_state.questions):
-                                    st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
-                        
-                        # Update AI context to prevent circular questioning
-                        services["topic_tracker"].update_ai_context_after_answer(user_input)
-                        
-                        # Complete API request
+                            # For the first question, extract user and company name
+                            if st.session_state.current_question_index == 0:
+                                user_info = services["ai_service"].extract_user_info(user_input)
+                                
+                                # Only update if we found something useful
+                                if user_info["name"] or user_info["company"]:
+                                    st.session_state.user_info = user_info
+                                    
+                                    # Add this information to the AI context
+                                    context_message = {
+                                        "role": "system", 
+                                        "content": f"The user's name is {user_info['name'] or 'not provided yet'} and they work for {user_info['company'] or 'a company that has not been mentioned yet'}. If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided."
+                                    }
+                                    st.session_state.chat_history.append(context_message)
+                            
+                            # Check if this is an answer to the current question
+                            if st.session_state.current_question_index < len(st.session_state.questions):
+                                is_answer = services["ai_service"].check_response_type(
+                                    st.session_state.current_question, 
+                                    user_input
+                                )
+                                
+                                if is_answer:
+                                    # Store answer and advance to next question
+                                    st.session_state.responses.append((st.session_state.current_question, user_input))
+                                    st.session_state.current_question_index += 1
+                                    if st.session_state.current_question_index < len(st.session_state.questions):
+                                        st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
+                            
+                            # Update AI context to prevent circular questioning
+                            services["topic_tracker"].update_ai_context_after_answer(user_input)
+                            
+                            # Complete API request
+                            st.session_state.api_request_in_progress = False
+                            
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error processing user input: {e}")
+                        # Add error handling that allows the app to continue
                         st.session_state.api_request_in_progress = False
-                        
-                        st.rerun()
 
     with tab2:
         # Instructions Tab Content
