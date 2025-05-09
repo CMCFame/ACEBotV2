@@ -108,24 +108,35 @@ class TopicTracker:
                 "message": f"The following topics still need to be covered: {', '.join(missing_topics)}"
             }
         
-        # Get answered questions count
-        from modules.summary import SummaryGenerator
-        summary_gen = SummaryGenerator()
-        responses = summary_gen.get_responses_as_list()
+        # Check for missing critical questions
+        conversation_text = " ".join([
+            msg.get("content", "") for msg in st.session_state.chat_history 
+            if isinstance(msg, dict) and msg.get("role") in ["assistant", "user"]
+        ]).lower()
         
-        # Check if at least 70% of questions have been answered
-        answered_count = len(responses)
-        total_questions = len(st.session_state.questions)
+        missing_critical_questions = []
         
-        if answered_count / total_questions < 0.7:
-            missing_count = total_questions - answered_count
+        # Key phrases that should appear in a complete conversation
+        key_phrases = [
+            "why do you call first", "how many devices", "which device is called first",
+            "attributes other than job classification", "straight down the list", "skip around",
+            "pauses between calls", "offer positions to people not normally", "call the whole list again",
+            "always handle insufficient staffing", "situations where you handle differently",
+            "rules that excuse declined callouts"
+        ]
+        
+        for phrase in key_phrases:
+            if phrase not in conversation_text:
+                missing_critical_questions.append(phrase)
+        
+        if missing_critical_questions:
             return {
                 "ready": False,
-                "missing_questions": [f"{missing_count} questions still unanswered"],
-                "message": f"Please continue answering questions. There are still approximately {missing_count} questions that need answers."
+                "missing_questions": missing_critical_questions,
+                "message": f"The following important points still need to be addressed: {', '.join(missing_critical_questions)}"
             }
         
-        # All topics have sufficient coverage
+        # All topics and critical questions covered
         return {
             "ready": True,
             "message": "All topics and critical questions have been covered. Ready for summary."
@@ -155,21 +166,8 @@ class TopicTracker:
         # Get current progress data
         progress_data = self.get_progress_data()
         
-        # Create a simplified version of question coverage
-        question_coverage = {}
-        for topic in TOPIC_AREAS.keys():
-            if topic in st.session_state.topic_areas_covered and st.session_state.topic_areas_covered[topic]:
-                question_coverage[topic] = {
-                    "covered": 1,
-                    "total": 1,
-                    "percentage": 100
-                }
-            else:
-                question_coverage[topic] = {
-                    "covered": 0,
-                    "total": 1,
-                    "percentage": 0
-                }
+        # Check for coverage information from questions as well
+        question_coverage = self.verify_question_coverage()
         
         # Serialize the data for the React component
         progress_json = json.dumps({
@@ -218,7 +216,7 @@ const ProgressDashboard = () => {{
           {{Object.entries(topicDetails).map(([topic, details]) => (
             <div key={{topic}} className="p-2 border-b border-gray-200">
               <div className="flex justify-between items-center mb-1">
-                <span className="font-medium">{{topic.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}}</span>
+                <span className="font-medium">{{details.covered}}/{{details.total}} {{topic.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}}</span>
                 <span className="text-sm font-semibold">
                   {{details.percentage < 100 ? 
                     <span className="text-orange-500">In Progress</span> : 
@@ -241,12 +239,9 @@ const ProgressDashboard = () => {{
         <div className="p-3 bg-green-50 rounded border border-green-200">
           <h3 className="text-base font-semibold mb-2 text-green-700">✓ Covered Topics</h3>
           <ul className="list-disc pl-5 text-sm text-green-800 space-y-1">
-            {{overall.covered_topics.length > 0 ?
-              overall.covered_topics.map(topic => (
-                <li key={{topic}}>{{topic}}</li>
-              )) :
-              <li>No topics fully covered yet</li>
-            }}
+            {{overall.covered_topics.map(topic => (
+              <li key={{topic}}>{{topic}}</li>
+            ))}}
           </ul>
         </div>
         
@@ -268,10 +263,10 @@ const ProgressDashboard = () => {{
       </div>
     </div>
   );
-}};
+};
 
 export default ProgressDashboard;
-"""
+        """
         
         # Return the artifact definition
         return {
@@ -281,7 +276,94 @@ export default ProgressDashboard;
             "title": "Progress Dashboard",
             "content": artifact_content
         }
-    
+        
+    def verify_question_coverage(self):
+        """Verify which specific questions have been answered."""
+        # Get all responses from the summary generator
+        from modules.summary import SummaryGenerator
+        summary_gen = SummaryGenerator()
+        responses = summary_gen.get_responses_as_list()
+        conversation_insights = summary_gen._extract_insights_from_conversation()
+        
+        # Create a mapping of questions to answers
+        question_answer_map = {}
+        
+        # Add explicitly tracked responses
+        for question, answer in responses:
+            clean_question = summary_gen._normalize_question(question)
+            question_answer_map[clean_question] = answer
+        
+        # Add conversation insights
+        for question, answer in conversation_insights.items():
+            if question not in question_answer_map:
+                question_answer_map[question] = answer
+        
+        # Count answered questions for each topic
+        topic_question_coverage = {topic: 0 for topic in TOPIC_AREAS.keys()}
+        topic_question_total = {topic: 0 for topic in TOPIC_AREAS.keys()}
+        
+        # Map questions to topics
+        question_to_topic = {
+            "name and company": "basic_info",
+            "situation": "basic_info",
+            "employees required": "staffing_details",
+            "roles": "staffing_details",
+            "call first": "contact_process",
+            "devices": "contact_process",
+            "device first": "contact_process",
+            "same list": "list_management",
+            "lists total": "list_management",
+            "job classification": "list_management",
+            "call this list": "list_management",
+            "straight down": "list_management",
+            "skip around": "list_management",
+            "pauses": "list_management",
+            "required number": "insufficient_staffing",
+            "different list": "insufficient_staffing",
+            "different location": "insufficient_staffing",
+            "offer position": "insufficient_staffing",
+            "whole list again": "insufficient_staffing",
+            "do differently": "insufficient_staffing",
+            "simultaneously": "calling_logistics",
+            "no but call again": "calling_logistics",
+            "first pass": "calling_logistics",
+            "change over time": "list_changes",
+            "when change": "list_changes",
+            "content change": "list_changes",
+            "tie breakers": "tiebreakers",
+            "email or text": "additional_rules",
+            "prevent called": "additional_rules",
+            "excuse declined": "additional_rules",
+        }
+        
+        # Count questions by topic
+        for question in st.session_state.questions:
+            normalized = summary_gen._normalize_question(question)
+            topic = None
+            
+            # Find matching topic
+            for key, topic_name in question_to_topic.items():
+                if key in normalized:
+                    topic = topic_name
+                    break
+            
+            if topic:
+                topic_question_total[topic] += 1
+                if normalized in question_answer_map:
+                    topic_question_coverage[topic] += 1
+        
+        # Calculate coverage percentages
+        coverage_results = {}
+        for topic, covered in topic_question_coverage.items():
+            total = topic_question_total[topic] or 1  # Avoid division by zero
+            coverage_results[topic] = {
+                "covered": covered,
+                "total": total,
+                "percentage": int((covered / total) * 100)
+            }
+        
+        return coverage_results
+        
     def update_ai_context_after_answer(self, user_input):
         """Update AI context after each user answer to prevent circular questioning."""
         # Analyze the last few messages to determine what question was just answered
@@ -306,8 +388,7 @@ export default ProgressDashboard;
                             # Simple word overlap check
                             q_words = set(q.lower().split())
                             asked_words = set(question_asked.lower().split())
-                            overlap = q_words.intersection(asked_words)
-                            if len(overlap) > 0 and len(overlap) / max(len(q_words), 1) > 0.3:
+                            if len(q_words.intersection(asked_words)) / max(len(q_words), 1) > 0.3:
                                 matched_questions.append(i)
                         
                         # Add context message to avoid asking this question again
