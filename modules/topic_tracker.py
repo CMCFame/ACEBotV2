@@ -94,52 +94,72 @@ class TopicTracker:
     
     def check_summary_readiness(self):
         """
-        Check if the questionnaire is ready for summary generation.
+        Check if the questionnaire is ready for summary generation with improved question completion checking.
         Returns dict with readiness status and any missing topics/questions.
         """
-        # Check if all topics are covered
-        all_topics_covered = all(st.session_state.topic_areas_covered.values())
+        # First get all answers that have been provided
+        from modules.summary import SummaryGenerator
+        summary_gen = SummaryGenerator()
+        responses = summary_gen.get_responses_as_list()
+        conversation_insights = summary_gen._extract_insights_from_conversation()
         
-        if not all_topics_covered:
-            missing_topics = [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
+        # Create a mapping of questions to answers
+        answered_questions = set()
+        for question, _ in responses:
+            clean_question = summary_gen._normalize_question(question)
+            answered_questions.add(clean_question)
+        
+        for question, _ in conversation_insights.items():
+            answered_questions.add(question)
+        
+        # Check how many questions have been answered for each topic
+        topic_question_counts = {
+            "basic_info": 0,
+            "staffing_details": 0,
+            "contact_process": 0,
+            "list_management": 0,
+            "insufficient_staffing": 0,
+            "calling_logistics": 0,
+            "list_changes": 0,
+            "tiebreakers": 0,
+            "additional_rules": 0
+        }
+        
+        total_questions = len(st.session_state.questions)
+        answered_count = len(answered_questions)
+        
+        # Consider a topic truly complete only if at least 70% of its questions are answered
+        question_completion_threshold = 0.7
+        
+        # Map topics to completion percentages
+        topic_coverage = self.verify_question_coverage()
+        incomplete_topics = []
+        
+        for topic, details in topic_coverage.items():
+            if details["percentage"] < 70:  # Less than 70% of questions answered
+                incomplete_topics.append(TOPIC_AREAS[topic])
+        
+        # Check if all topics have sufficient coverage
+        if incomplete_topics:
             return {
                 "ready": False,
-                "missing_topics": missing_topics,
-                "message": f"The following topics still need to be covered: {', '.join(missing_topics)}"
+                "missing_topics": incomplete_topics,
+                "message": f"The following topics still need more detailed answers: {', '.join(incomplete_topics)}"
             }
         
-        # Check for missing critical questions
-        conversation_text = " ".join([
-            msg.get("content", "") for msg in st.session_state.chat_history 
-            if isinstance(msg, dict) and msg.get("role") in ["assistant", "user"]
-        ]).lower()
-        
-        missing_critical_questions = []
-        
-        # Key phrases that should appear in a complete conversation
-        key_phrases = [
-            "why do you call first", "how many devices", "which device is called first",
-            "attributes other than job classification", "straight down the list", "skip around",
-            "pauses between calls", "offer positions to people not normally", "call the whole list again",
-            "always handle insufficient staffing", "situations where you handle differently",
-            "rules that excuse declined callouts"
-        ]
-        
-        for phrase in key_phrases:
-            if phrase not in conversation_text:
-                missing_critical_questions.append(phrase)
-        
-        if missing_critical_questions:
+        # If we've answered less than 70% of total questions, we're not ready
+        if answered_count / total_questions < 0.7:
+            missing_count = total_questions - answered_count
             return {
                 "ready": False,
-                "missing_questions": missing_critical_questions,
-                "message": f"The following important points still need to be addressed: {', '.join(missing_critical_questions)}"
+                "missing_questions": [f"{missing_count} questions still unanswered"],
+                "message": f"Please continue answering questions. There are still approximately {missing_count} questions that need answers."
             }
         
-        # All topics and critical questions covered
+        # All topics have sufficient coverage
         return {
             "ready": True,
-            "message": "All topics and critical questions have been covered. Ready for summary."
+            "message": "All topics have sufficient coverage. Ready for summary."
         }
     
     def get_progress_percentage(self):

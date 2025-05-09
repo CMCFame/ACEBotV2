@@ -55,12 +55,17 @@ class ChatUI:
             self.render_assistant_message(content)
 
     def render_assistant_message(self, content):
-        """Render a standard assistant message."""
+        """Render a standard assistant message with bubble-style design."""
         st.markdown(
             f"""
-            <div style="display: flex; margin-bottom: 15px;">
-              <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;">
-                <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+            <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
+              <div style="background-color: #f4f0f0; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
+                   max-width: 85%; box-shadow: 2px 2px 8px rgba(0,0,0,0.08); 
+                   border: 1px solid #e9e3e3; position: relative;">
+                <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
+                     background-color: #f4f0f0; transform: rotate(45deg); border-left: 1px solid #e9e3e3; 
+                     border-bottom: 1px solid #e9e3e3;"></div>
+                <p style="margin: 0; color: var(--primary-red); font-weight: 600; font-size: 15px;">💬 Assistant</p>
                 <div style="margin-top: 8px;">
                   <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p>
                 </div>
