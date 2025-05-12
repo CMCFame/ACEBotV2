@@ -178,3 +178,86 @@ button[data-testid="baseButton-secondary"]:hover {
     color: #333;
     margin-top: 8px;
 }
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    div[data-testid="stForm"] {
+        padding: 10px;
+    }
+    
+    div[data-testid="stTextInput"] input {
+        font-size: 16px; /* Prevents iOS zoom on focus */
+        padding: 8px 12px;
+    }
+    
+    .stDownloadButton button {
+        font-size: 14px;
+        padding: 6px 12px;
+    }
+    
+    /* Adjust chat bubbles for mobile */
+    div[style*="display: flex; margin-bottom: 15px;"] > div {
+        max-width: 95% !important;
+        padding: 10px 12px !important;
+    }
+    
+    /* Make buttons bigger on mobile for easier tapping */
+    div[data-testid="stButton"] button {
+        min-height: 44px; /* Apple's recommended minimum touch target size */
+    }
+    
+    /* Improve spacing in mobile view */
+    .stTabs [data-baseweb="tab-panel"] {
+        padding: 10px 5px;
+    }
+    
+    /* Adjust sidebar for mobile */
+    section[data-testid="stSidebar"] {
+        width: 100%;
+        min-width: 100%;
+    }
+}
+
+/* CSS Variables for theming */
+:root {
+    --primary-red: #D22B2B;
+    --light-red: #f8d7da;
+    --background-color: #ffffff;
+    --text-color: #333333;
+    --card-background: #f8f9fa;
+    --border-color: #e9ecef;
+}
+
+/* Dark theme */
+.dark-theme {
+    --primary-red: #ff6b6b;
+    --light-red: #3d2a2c;
+    --background-color: #1e1e1e;
+    --text-color: #f0f0f0;
+    --card-background: #2d2d2d;
+    --border-color: #444444;
+}
+
+/* Ensure all text adapts to theme */
+body {
+    color: var(--text-color);
+}
+
+/* Customize scrollbars */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--card-background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-red);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a91f1f;
+}

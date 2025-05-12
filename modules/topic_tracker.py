@@ -108,6 +108,23 @@ class TopicTracker:
                 "message": f"The following topics still need to be covered: {', '.join(missing_topics)}"
             }
         
+        # Get answered questions count
+        from modules.summary import SummaryGenerator
+        summary_gen = SummaryGenerator()
+        responses = summary_gen.get_responses_as_list()
+        
+        # Check if at least 70% of questions have been answered
+        answered_count = len(responses)
+        total_questions = len(st.session_state.questions)
+        
+        if answered_count / total_questions < 0.7:
+            missing_count = total_questions - answered_count
+            return {
+                "ready": False,
+                "missing_questions": [f"{missing_count} questions still unanswered"],
+                "message": f"Please continue answering questions. There are still approximately {missing_count} questions that need answers."
+            }
+        
         # Check for missing critical questions
         conversation_text = " ".join([
             msg.get("content", "") for msg in st.session_state.chat_history 

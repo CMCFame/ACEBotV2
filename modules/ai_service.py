@@ -1,6 +1,7 @@
 # modules/ai_service.py
 import openai
 import streamlit as st
+import time
 from config import OPENAI_MODEL, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 class AIService:
@@ -16,21 +17,31 @@ class AIService:
                 st.error(f"Failed to initialize OpenAI client: {e}")
                 self.client = None
     
-    def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
-        """Get a response from the OpenAI API."""
+    def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE, retries=3):
+        """Get a response from the OpenAI API with retry mechanism."""
         if not self.client:
             return "Error: OpenAI client not initialized"
             
-        try:
-            response = self.client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        except openai.APIError as e:
-            return f"Error: {e}"
+        for attempt in range(retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                return response.choices[0].message.content.strip()
+            except openai.APIError as e:
+                if attempt < retries - 1:
+                    # Wait before retrying (exponential backoff)
+                    time.sleep(2 ** attempt)
+                    continue
+                return f"Error: {e}"
+            except Exception as e:
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                return f"Unexpected error: {e}"
     
     def extract_user_info(self, user_input):
         """Extract user name and company name from the first response."""
