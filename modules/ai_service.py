@@ -25,7 +25,7 @@ class AIService:
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,  # Changed from max_tokens to max_completion_tokens
                 temperature=temperature
             )
             return response.choices[0].message.content.strip()

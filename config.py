@@ -2,8 +2,8 @@
 import os
 
 # OpenAI API Configuration
-OPENAI_MODEL = "gpt-4.1-2025-04-14"
-DEFAULT_MAX_TOKENS = 150
+OPENAI_MODEL = "o4-mini-2025-04-16"  # You can update this to the specific model you're using
+DEFAULT_MAX_TOKENS = 150  # Variable name kept for backward compatibility
 DEFAULT_TEMPERATURE = 0.7
 
 # Cookie Management
