@@ -3,7 +3,7 @@ import os
 
 # OpenAI API Configuration
 OPENAI_MODEL = "o4-mini-2025-04-16"
-DEFAULT_MAX_TOKENS = 150
+DEFAULT_MAX_COMPLETION_TOKENS = 150
 DEFAULT_TEMPERATURE = 0.7
 
 # Cookie Management
