@@ -109,31 +109,57 @@ class AIService:
         
     def get_example_response(self, last_question):
         """Get a consistently formatted example response with plain text formatting."""
-        # Modified system message to generate plain text format without HTML
+        # Enhanced system message with more context
         system_message = """
-        You are providing an example answer to a question about utility company callout processes.
+        You are providing an example answer to a specific question about utility company callout processes.
+        
+        THE CURRENT QUESTION IS: {question}
+        
+        Your example MUST be directly relevant to THIS SPECIFIC QUESTION, not a generic utility example.
+        Consider the type of information the question is asking for and provide a realistic, specific example.
         
         Format your response exactly as follows:
         
-        Example: [Your specific, detailed example relevant to utility companies]
+        Example: [Your specific, detailed example relevant to THIS question]
         
         To continue with our question:
-        [Repeat or rephrase the original question]
+        [Repeat the original question]
         
         Do NOT use any HTML tags or special formatting in your response. Use only plain text.
-        The example should be specific, relevant to a utility company, and demonstrate a good answer.
-        """
+        The example should be specific, relevant to a utility company's callout process, and demonstrate a good answer to THIS EXACT QUESTION.
+        """.format(question=last_question)
+        
+        # More specific user prompt
+        user_prompt = f"Provide a SPECIFIC example answer for this EXACT question about utility callout processes: '{last_question}'. Make sure the example directly answers this specific question."
         
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Provide an example answer for this question: {last_question}"}
+            {"role": "user", "content": user_prompt}
         ]
         
         example_response = self.get_response(messages, max_tokens=250, temperature=0.7)
         
-        # Simple validation
+        # Improved validation
         if "Example:" not in example_response:
-            example_response = f"Example: A detailed example for utility companies related to this question.\n\nTo continue with our question:\n{last_question}"
+            # Create a more relevant fallback example
+            topic_keywords = {
+                "device": "Each employee typically has 2 devices: a company cell phone and a pager. We call the cell phone first as it's the primary communication method.",
+                "list": "Our lists are organized by job role and skill level, with separate lists for linemen, technicians, and supervisors.",
+                "call first": "We typically call the on-duty supervisor first, as they need to assess the situation and determine the appropriate crew composition.",
+                "contact": "We contact the on-call technicians first because they have the initial troubleshooting skills needed.",
+                "staffing": "For a typical outage response, we require 4-6 employees: 2-3 line workers, 1 equipment operator, and 1 supervisor.",
+                "tiebreaker": "Our first tiebreaker is seniority, followed by certification level, and finally alphabetical order by last name.",
+                "overtime": "When distributing overtime, we use a rotating list based on hours worked year-to-date, with the employee with fewest hours getting first opportunity."
+            }
+            
+            # Find most relevant fallback example based on keywords in the question
+            fallback_example = "A detailed example relevant to this specific question about utility callout processes."
+            for keyword, example in topic_keywords.items():
+                if keyword.lower() in last_question.lower():
+                    fallback_example = example
+                    break
+                    
+            example_response = f"Example: {fallback_example}\n\nTo continue with our question:\n{last_question}"
             
         if "To continue with our question:" not in example_response:
             parts = example_response.split("\n\n")

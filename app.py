@@ -527,28 +527,45 @@ def main():
             if st.session_state.example_button_clicked:
                 # Extract the last question from the assistant
                 last_question = None
+                question_context = None
+                
+                # First try to find the most recent question
                 for msg in reversed(st.session_state.visible_messages):
                     if msg["role"] == "assistant" and "?" in msg["content"]:
-                        sentences = msg["content"].split(". ")
-                        for sentence in reversed(sentences):
-                            if "?" in sentence:
-                                last_question = sentence.strip()
+                        # Skip existing example messages
+                        if "Example:" not in msg["content"]:
+                            for sentence in msg["content"].split(". "):
+                                if "?" in sentence:
+                                    last_question = sentence.strip() + "?"
+                                    question_context = msg["content"]  # Store full context
+                                    break
+                            if last_question:
                                 break
-                        if last_question:
-                            break
                 
                 if not last_question:
                     # Fallback to the last assistant message
                     for msg in reversed(st.session_state.visible_messages):
-                        if msg["role"] == "assistant":
+                        if msg["role"] == "assistant" and "Example:" not in msg["content"]:
                             last_question = msg["content"]
+                            question_context = msg["content"]
                             break
                 
                 if last_question:
-                    # Get a simple example without any formatting
+                    # Get a topic-specific example with enhanced context
                     example_messages = [
-                        {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
-                        {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
+                        {"role": "system", "content": f"""
+                        You are providing a specific example answer related to utility company callout processes.
+                        
+                        The CURRENT QUESTION is: {last_question}
+                        
+                        Additional context: {question_context}
+                        
+                        Give an example that SPECIFICALLY answers this exact question about callout processes.
+                        The example must be relevant to the question topic and utility company operations.
+                        ONLY provide the example text with no additional explanation.
+                        Keep it under 75 words and make it realistic and helpful.
+                        """},
+                        {"role": "user", "content": f"Give me one brief, specific example answer for this exact question: {last_question}"}
                     ]
                     
                     # Display loading spinner while waiting for response
@@ -596,28 +613,45 @@ def main():
                     if message_type["type"] == "example_request":
                         # Extract the last question from the assistant
                         last_question = None
+                        question_context = None
+                        
+                        # First try to find the most recent question
                         for msg in reversed(st.session_state.visible_messages):
                             if msg["role"] == "assistant" and "?" in msg["content"]:
-                                sentences = msg["content"].split(". ")
-                                for sentence in reversed(sentences):
-                                    if "?" in sentence:
-                                        last_question = sentence.strip()
+                                # Skip existing example messages
+                                if "Example:" not in msg["content"]:
+                                    for sentence in msg["content"].split(". "):
+                                        if "?" in sentence:
+                                            last_question = sentence.strip() + "?"
+                                            question_context = msg["content"]  # Store full context
+                                            break
+                                    if last_question:
                                         break
-                                if last_question:
-                                    break
                         
                         if not last_question:
                             # Fallback to the last assistant message
                             for msg in reversed(st.session_state.visible_messages):
-                                if msg["role"] == "assistant":
+                                if msg["role"] == "assistant" and "Example:" not in msg["content"]:
                                     last_question = msg["content"]
+                                    question_context = msg["content"]
                                     break
                         
                         if last_question:
-                            # Get a simple example without any formatting
+                            # Get a topic-specific example with enhanced context
                             example_messages = [
-                                {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
-                                {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
+                                {"role": "system", "content": f"""
+                                You are providing a specific example answer related to utility company callout processes.
+                                
+                                The CURRENT QUESTION is: {last_question}
+                                
+                                Additional context: {question_context}
+                                
+                                Give an example that SPECIFICALLY answers this exact question about callout processes.
+                                The example must be relevant to the question topic and utility company operations.
+                                ONLY provide the example text with no additional explanation.
+                                Keep it under 75 words and make it realistic and helpful.
+                                """},
+                                {"role": "user", "content": f"Give me one brief, specific example answer for this exact question: {last_question}"}
                             ]
                             
                             # Display loading spinner

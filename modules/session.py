@@ -103,7 +103,10 @@ class SessionManager:
             clean_visible_messages = []
             for msg in session_data["visible_messages"]:
                 if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    clean_visible_messages.append({"role": msg["role"], "content": msg["content"]})
+                    clean_msg = {"role": msg["role"], "content": msg["content"]}
+                    if "already_displayed" in msg:
+                        clean_msg["already_displayed"] = msg["already_displayed"]
+                    clean_visible_messages.append(clean_msg)
             session_data["visible_messages"] = clean_visible_messages
             
             # Try to save to server storage (primary method)
@@ -202,39 +205,66 @@ class SessionManager:
                 if session_data["chat_history"][0].get("role") != "system":
                     session_data["chat_history"].insert(0, {"role": "system", "content": st.session_state.instructions})
                 
-                # Get current question and user info for context
-                current_q_index = session_data.get('current_question_index', 0)
-                current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
-                user_name = session_data['user_info'].get('name', 'unknown')
-                company_name = session_data['user_info'].get('company', 'unknown company')
+                # Get the actual last question asked, not just the current question index
+                last_question = None
+                if "visible_messages" in session_data:
+                    # Scan backwards through visible messages to find the last actual question
+                    for msg in reversed(session_data["visible_messages"]):
+                        if msg["role"] == "assistant" and "?" in msg["content"]:
+                            # Skip example messages
+                            if "Example:" not in msg["content"]:
+                                # Extract the actual question
+                                for sentence in msg["content"].split(". "):
+                                    if "?" in sentence:
+                                        last_question = sentence.strip() + "?"
+                                        break
+                                if last_question:
+                                    break
                 
-                # Get topics covered and still needed
+                # If we found a last question, override the current_q
+                if last_question:
+                    current_q = last_question
+                else:
+                    # Fallback to index-based question
+                    current_q_index = session_data.get('current_question_index', 0)
+                    if "questions" in st.session_state and current_q_index < len(st.session_state.questions):
+                        current_q = st.session_state.questions[current_q_index]
+                    else:
+                        current_q = "the previous question"
+                
+                # Get topics covered for a richer welcome back message
                 covered_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v]
-                needed_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v]
+                topics_covered_text = ""
+                if covered_topics:
+                    topics_covered_text = f" So far, we've covered information about {', '.join(covered_topics[:3])}"
+                    if len(covered_topics) > 3:
+                        topics_covered_text += " and more."
+                    else:
+                        topics_covered_text += "."
                 
-                # Enhanced context restoration to help the AI understand exactly where we left off
+                # Enhanced restoration context
                 restoration_context = {
                     "role": "system",
                     "content": f"""
-                    CONTEXT RESTORATION:
+                    CRITICAL CONTEXT RESTORATION:
                     
                     1. This conversation is being resumed from a previous session.
-                    2. User: {user_name} from {company_name}
-                    3. Current question: "{current_q}"
-                    4. Last saved: {session_data.get('saved_timestamp', 'unknown')}
+                    2. User: {session_data['user_info'].get('name', 'unknown')} from {session_data['user_info'].get('company', 'unknown company')}
+                    3. Last question asked: "{current_q}"
+                    4. Current conversation state: The user was in the middle of answering questions about their utility company's callout processes.
                     
                     Topics covered:
                     {', '.join(covered_topics) or "None yet"}
                     
                     Topics still needed:
-                    {', '.join(needed_topics) or "All topics covered"}
+                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v]) or "All topics covered"}
                     
                     YOU MUST:
-                    - Continue naturally from where you left off
-                    - Do not repeat questions already answered
-                    - Focus on gathering information about missing topics
-                    - Briefly summarize what you've learned so far (1-2 sentences)
-                    - Be conversational and friendly
+                    - Continue from the EXACT point where the conversation left off
+                    - Use the LAST QUESTION that was being discussed as your starting point
+                    - DO NOT go back to earlier questions that were already answered
+                    - If the user was in the middle of a specific question, continue with THAT question
+                    - Be conversational but focused on picking up exactly where you left off
                     """
                 }
                 
@@ -272,20 +302,27 @@ class SessionManager:
                 st.session_state.explicitly_finished = session_data["explicitly_finished"]
             
             # Add a visible message informing the user that the session was restored
-            current_q_index = session_data.get('current_question_index', 0)
-            current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
-            
-            # Get topics covered for a richer welcome back message
-            covered_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v]
-            topics_covered_text = ""
-            if covered_topics:
-                topics_covered_text = f" So far, we've covered information about {', '.join(covered_topics[:3])}"
-                if len(covered_topics) > 3:
-                    topics_covered_text += " and more."
+            # If last_question was not found above, try to find it again
+            if not last_question:
+                for msg in reversed(st.session_state.visible_messages):
+                    if msg["role"] == "assistant" and "?" in msg["content"]:
+                        # Skip example messages
+                        if "Example:" not in msg["content"]:
+                            # Extract the actual question
+                            for sentence in msg["content"].split(". "):
+                                if "?" in sentence:
+                                    last_question = sentence.strip() + "?"
+                                    break
+                            if last_question:
+                                break
+                
+                if last_question:
+                    current_q = last_question
                 else:
-                    topics_covered_text += "."
+                    # Fallback to current question
+                    current_q = st.session_state.current_question
             
-            welcome_message = f"👋 Welcome back! I've restored your previous session.{topics_covered_text} We were discussing {current_q}. Let's continue from where we left off."
+            welcome_message = f"👋 Welcome back! I've restored your previous session.{topics_covered_text} We were discussing {current_q} Let's continue from where we left off."
             
             st.session_state.visible_messages.append({
                 "role": "assistant", 
