@@ -2,7 +2,7 @@
 import os
 
 # OpenAI API Configuration
-OPENAI_MODEL = "gpt-4.1-nano-2025-04-14"
+OPENAI_MODEL = "o4-mini-2025-04-16"
 DEFAULT_MAX_TOKENS = 150
 DEFAULT_TEMPERATURE = 0.7
 
