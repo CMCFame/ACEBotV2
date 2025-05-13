@@ -22,11 +22,11 @@ class AIService:
             return "Error: OpenAI client not initialized"
             
         try:
+            # o4 models don't support temperature parameter - remove it from the API call
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
-                max_completion_tokens=max_tokens,  # Changed from max_tokens to max_completion_tokens
-                temperature=temperature
+                max_completion_tokens=max_tokens  # Keep only the max_completion_tokens parameter
             )
             return response.choices[0].message.content.strip()
         except openai.APIError as e:

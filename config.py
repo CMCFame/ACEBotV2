@@ -2,9 +2,11 @@
 import os
 
 # OpenAI API Configuration
-OPENAI_MODEL = "o4-mini-2025-04-16"  # You can update this to the specific model you're using
-DEFAULT_MAX_TOKENS = 150  # Variable name kept for backward compatibility
-DEFAULT_TEMPERATURE = 0.7
+OPENAI_MODEL = "o4-mini-2025-04-16"
+# Note: o4 models don't support custom temperature values, but we keep these
+# config values for backward compatibility with the code
+DEFAULT_MAX_TOKENS = 150
+DEFAULT_TEMPERATURE = 1  # Changed to 1 since that's the only supported value for o4 models
 
 # Cookie Management
 COOKIE_PREFIX = "ace_"
