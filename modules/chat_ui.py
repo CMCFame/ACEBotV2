@@ -12,14 +12,17 @@ class ChatUI:
     def display_chat_history(self):
         """Display the chat history with styled messages and improved example formatting."""
         for message in st.session_state.visible_messages:
+            # Skip messages that have been directly displayed already
+            if message.get("already_displayed"):
+                continue
+                
             # USER MESSAGES
             if message["role"] == "user":
                 user_label = st.session_state.user_info.get("name", "You") or "You"
                 st.markdown(
                     f"""
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-                      <div style="background-color: #e6f7ff; border-radius: 15px 15px 0 15px; padding: 12px 18px; 
-                           max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;">
+                      <div style="background-color: #e8f4f8; border-radius: 15px 15px 0 15px; padding: 12px 18px; max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;">
                         <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">{user_label}</p>
                         <p style="margin: 5px 0 0 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{message["content"]}</p>
                       </div>
@@ -27,23 +30,42 @@ class ChatUI:
                     """,
                     unsafe_allow_html=True
                 )
-
             # ASSISTANT MESSAGES
             elif message["role"] == "assistant":
                 content = message["content"]
                 
-                # Check if content contains HTML tags (indicating raw HTML)
-                if "<div" in content or "<p" in content or "</div>" in content:
-                    # Check if this is an example message
-                    if "Example:" in content or "font-style: italic;" in content:
-                        # This is an example with HTML - use special handling
-                        self._display_example_and_question(content)
+                # DIRECT PATTERN MATCHING FOR EXAMPLE MESSAGES
+                if "Example:" in content and ("To continue with our question" in content or "font-style: italic" in content):
+                    if "<div" in content or "<p" in content:
+                        # Extract example content and question content
+                        example_text = ""
+                        question_text = "To continue with our question:"
+                        
+                        # Try to extract the example text
+                        example_match = re.search(r'font-style: italic;">(.*?)</p>', content)
+                        if example_match:
+                            example_text = example_match.group(1)
+                        else:
+                            # Fallback extraction
+                            parts = content.split("Example:")
+                            if len(parts) > 1:
+                                example_parts = parts[1].split("To continue with our question:")
+                                if len(example_parts) > 0:
+                                    example_text = example_parts[0].strip()
+                        
+                        # Try to extract the question text
+                        question_match = re.search(r'color: #0c5460;">(.*?)</p>', content)
+                        if question_match:
+                            question_text = question_match.group(1)
+                        else:
+                            # Fallback to just the continuation phrase
+                            question_text = "To continue with our question:"
+                        
+                        # Render our own formatted example
+                        self._render_example_format(example_text, question_text)
                     else:
-                        # Escape HTML to show as plain text for other HTML content
-                        content = html.escape(content)
-                        # Create a regular assistant message with the escaped content
-                        self.render_assistant_message(content)
-                
+                        # Plain text format
+                        self._display_example_and_question(content)
                 # HELP BOX
                 elif "I need help with this question" in content:
                     help_text = content.replace("I need help with this question", "").strip()
@@ -65,8 +87,7 @@ class ChatUI:
                         """,
                         unsafe_allow_html=True
                     )
-
-                # WELCOME BACK MESSAGE (SESSION RESTORATION)
+                # WELCOME BACK MESSAGE
                 elif "Welcome back!" in content and "I've restored your previous session" in content:
                     st.markdown(
                         f"""
@@ -86,13 +107,11 @@ class ChatUI:
                         """,
                         unsafe_allow_html=True
                     )
-
-                # ENHANCED EXAMPLE & QUESTION BOX
-                elif "*Example:" in content or "Example:" in content:
-                    # Process with new more robust parsing
-                    self._display_example_and_question(content)
                 # REGULAR ASSISTANT MESSAGE
                 else:
+                    # Escape any HTML to prevent it from showing as raw tags
+                    if "<div" in content or "<p" in content:
+                        content = html.escape(content)
                     self.render_assistant_message(content)
     
     def render_assistant_message(self, content):
@@ -116,98 +135,8 @@ class ChatUI:
             unsafe_allow_html=True
         )
     
-    def _display_example_and_question(self, content):
-        """
-        Display example and question with enhanced visual separation.
-        Handles both plain text and HTML responses.
-        """
-        # First check if the content contains HTML tags
-        contains_html = "<div" in content or "<p" in content
-        
-        if contains_html:
-            # Extract the example text and question text from HTML content
-            example_text = ""
-            question_text = ""
-            
-            # Try to find the example text
-            example_pattern = r'font-style: italic;">(.*?)</p>'
-            example_match = re.search(example_pattern, content)
-            if example_match:
-                example_text = example_match.group(1)
-            
-            # Try to find the question text
-            question_pattern = r'color: #0c5460;">(.*?)</p>'
-            question_match = re.search(question_pattern, content)
-            if question_match:
-                question_text = question_match.group(1)
-                
-            # If not found with regex, fall back to basic string extraction
-            if not example_text or not question_text:
-                # Fall back to original method for text extraction
-                if "Example:" in content:
-                    parts = content.split("Example:", 1)
-                    if len(parts) > 1:
-                        example_parts = parts[1].split("To continue with our question:", 1)
-                        if len(example_parts) > 1:
-                            example_text = example_parts[0].strip()
-                            question_text = example_parts[1].strip()
-                        else:
-                            example_text = example_parts[0].strip()
-        else:
-            # Original text-based extraction for non-HTML content
-            example_text = ""
-            question_text = ""
-            
-            # Find example part
-            if "*Example:" in content:
-                parts = content.split("*Example:", 1)
-                if len(parts) > 1:
-                    example_parts = parts[1].split("*", 1)
-                    if len(example_parts) > 1:
-                        example_text = example_parts[0].strip()
-                        remaining = example_parts[1].strip()
-                    else:
-                        example_text = example_parts[0].strip()
-                        remaining = ""
-                else:
-                    remaining = content
-            elif "Example:" in content:
-                parts = content.split("Example:", 1)
-                if len(parts) > 1:
-                    example_text = parts[1].strip()
-                    remaining = ""
-                    
-                    # Try to find where example ends and question begins
-                    if "To continue with our question" in example_text:
-                        example_parts = example_text.split("To continue with our question", 1)
-                        example_text = example_parts[0].strip()
-                        if len(example_parts) > 1:
-                            question_text = "To continue with our question" + example_parts[1].strip()
-                else:
-                    remaining = content
-            else:
-                remaining = content
-                
-            # If we already have question text from above, use it
-            if not question_text and "To continue with our question" in remaining:
-                parts = remaining.split("To continue with our question", 1)
-                if len(parts) > 1:
-                    question_text = parts[1].strip()
-            
-            # If still no question found, look for a sentence with a question mark
-            if not question_text:
-                sentences = remaining.split(". ")
-                for sentence in reversed(sentences):
-                    if "?" in sentence:
-                        question_text = sentence.strip()
-                        break
-                        
-            # If still no question, use all remaining text
-            if not question_text and remaining:
-                question_text = remaining
-        
-        # Create HTML with clear visual distinction between example and question
-        # This part is the same for both HTML and text content
+    def _render_example_format(self, example_text, question_text):
+        """Directly render a formatted example without trying to parse HTML."""
         st.markdown(
             f"""
             <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
@@ -234,6 +163,66 @@ class ChatUI:
             """,
             unsafe_allow_html=True
         )
+    
+    def _display_example_and_question(self, content):
+        """
+        Display example and question with enhanced visual separation.
+        Handles both plain text and HTML responses.
+        """
+        # Original text-based extraction for non-HTML content
+        example_text = ""
+        question_text = ""
+        
+        # Find example part
+        if "*Example:" in content:
+            parts = content.split("*Example:", 1)
+            if len(parts) > 1:
+                example_parts = parts[1].split("*", 1)
+                if len(example_parts) > 1:
+                    example_text = example_parts[0].strip()
+                    remaining = example_parts[1].strip()
+                else:
+                    example_text = example_parts[0].strip()
+                    remaining = ""
+            else:
+                remaining = content
+        elif "Example:" in content:
+            parts = content.split("Example:", 1)
+            if len(parts) > 1:
+                example_text = parts[1].strip()
+                remaining = ""
+                
+                # Try to find where example ends and question begins
+                if "To continue with our question" in example_text:
+                    example_parts = example_text.split("To continue with our question", 1)
+                    example_text = example_parts[0].strip()
+                    if len(example_parts) > 1:
+                        question_text = "To continue with our question" + example_parts[1].strip()
+            else:
+                remaining = content
+        else:
+            remaining = content
+            
+        # If we already have question text from above, use it
+        if not question_text and "To continue with our question" in remaining:
+            parts = remaining.split("To continue with our question", 1)
+            if len(parts) > 1:
+                question_text = parts[1].strip()
+        
+        # If still no question found, look for a sentence with a question mark
+        if not question_text:
+            sentences = remaining.split(". ")
+            for sentence in reversed(sentences):
+                if "?" in sentence:
+                    question_text = sentence.strip()
+                    break
+                    
+        # If still no question, use all remaining text
+        if not question_text and remaining:
+            question_text = remaining
+        
+        # Use the direct render method with the extracted content
+        self._render_example_format(example_text, question_text)
     
     def render_progress_indicator(self):
         """Display a loading spinner while waiting for the API response."""
