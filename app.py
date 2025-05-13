@@ -14,50 +14,6 @@ import os
 import json
 from datetime import datetime
 
-# Theme functions
-def toggle_theme():
-    """Toggle between light and dark theme."""
-    if 'theme' not in st.session_state:
-        st.session_state.theme = 'light'
-    st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
-    
-def apply_theme_css():
-    """Apply theme-specific CSS."""
-    theme = st.session_state.get('theme', 'light')
-    if theme == 'light':
-        st.markdown("""
-        <style>
-        :root {
-            --primary-red: #D22B2B;
-            --light-red: #f8d7da;
-            --background-color: #ffffff;
-            --text-color: #333333;
-            --card-background: #f8f9fa;
-            --border-color: #e9ecef;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <style>
-        :root {
-            --primary-red: #ff6b6b;
-            --light-red: #3d2a2c;
-            --background-color: #1e1e1e;
-            --text-color: #f0f0f0;
-            --card-background: #2d2d2d;
-            --border-color: #444444;
-        }
-        body {
-            background-color: var(--background-color);
-            color: var(--text-color);
-        }
-        .stApp {
-            background-color: var(--background-color);
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
 # Continue with other imports
 try:
     from modules.session import SessionManager
@@ -139,15 +95,6 @@ except Exception as e:
 def add_sidebar_ui():
     """Add the sidebar UI elements."""
     with st.sidebar:
-        # Theme toggle
-        st.markdown("### Display Settings")
-        theme_icon = "🌓" if st.session_state.get('theme', 'light') == 'light' else "☀️"
-        if st.button(f"{theme_icon} Toggle Theme", key="toggle_theme"):
-            toggle_theme()
-            st.rerun()
-            
-        st.markdown("---")
-    
         st.markdown("""
             <div style="text-align: center; margin-bottom: 25px;">
                 <img src="https://www.publicpower.org/sites/default/files/logo-arcos_0.png"
@@ -248,9 +195,6 @@ def add_sidebar_ui():
 
 def main():
     """Main application function."""
-    # Apply theme CSS
-    apply_theme_css()
-    
     # Create tabs
     tab1, tab2, tab3 = st.tabs(["Questionnaire", "Instructions", "FAQ"])
 
@@ -269,8 +213,8 @@ def main():
         st.markdown(
             """
             <div style="text-align: center; padding: 10px 0 20px 0;">
-                <h1 style="color: var(--primary-red); margin-bottom: 5px;">ACE Questionnaire</h1>
-                <p style="color: var(--text-color); font-size: 16px;">
+                <h1 style="color: #D22B2B; margin-bottom: 5px;">ACE Questionnaire</h1>
+                <p style="color: #555; font-size: 16px;">
                     Help us understand your company's requirements for ARCOS implementation
                 </p>
             </div>
@@ -305,10 +249,6 @@ def main():
         if 'example_button_clicked' not in st.session_state:
             st.session_state.example_button_clicked = False
         
-        # Initialize theme if not set
-        if 'theme' not in st.session_state:
-            st.session_state.theme = 'light'
-        
         # Display chat history with special handling for examples
         for i, message in enumerate(st.session_state.visible_messages):
             # Skip messages that have been directly displayed already
@@ -337,13 +277,8 @@ def main():
                     help_text = content.replace("I need help with this question", "").strip()
                     st.markdown(
                         f"""
-                        <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
-                          <div style="background-color: #f8f9fa; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
-                               width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; 
-                               border-left: 5px solid #17a2b8; position: relative;">
-                            <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
-                                 background-color: #f8f9fa; transform: rotate(45deg); border-left: 1px solid #e9ecef; 
-                                 border-bottom: 1px solid #e9ecef;"></div>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #17a2b8;">
                             <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
                             <div style="margin-top: 8px;">
                               <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
@@ -357,13 +292,8 @@ def main():
                 elif "Welcome back!" in content and "I've restored your previous session" in content:
                     st.markdown(
                         f"""
-                        <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
-                          <div style="background-color: #e8f4f8; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
-                               width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; 
-                               border-left: 5px solid #4e8cff; position: relative;">
-                            <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
-                                 background-color: #e8f4f8; transform: rotate(45deg); border-left: 1px solid #d1e7f0; 
-                                 border-bottom: 1px solid #d1e7f0;"></div>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-left: 5px solid #4e8cff;">
                             <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">🔄 Session Restored</p>
                             <div style="margin-top: 8px;">
                               <p style="margin: 0; white-space: pre-wrap; color: #0d6efd; line-height: 1.5;">{content}</p>
@@ -373,13 +303,21 @@ def main():
                         """,
                         unsafe_allow_html=True
                     )
-                # ENHANCED EXAMPLE & QUESTION BOX
-                elif "*Example:" in content or "Example:" in content:
-                    # Process with new more robust parsing
-                    services["chat_ui"]._display_example_and_question(content)
                 # REGULAR ASSISTANT MESSAGE
                 else:
-                    services["chat_ui"].render_assistant_message(content)
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;">
+                            <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+                            <div style="margin-top: 8px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
         
         # Display any pending help message
         if st.session_state.pending_help:
@@ -388,13 +326,8 @@ def main():
             # Render the help box
             st.markdown(
                 f"""
-                <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
-                  <div style="background-color: #f8f9fa; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
-                       width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; 
-                       border-left: 5px solid #17a2b8; position: relative;">
-                    <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
-                         background-color: #f8f9fa; transform: rotate(45deg); border-left: 1px solid #e9ecef; 
-                         border-bottom: 1px solid #e9ecef;"></div>
+                <div style="display: flex; margin-bottom: 15px;">
+                  <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #17a2b8;">
                     <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
                     <div style="margin-top: 8px;">
                       <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
@@ -408,8 +341,7 @@ def main():
             # Add to visible messages
             st.session_state.visible_messages.append({
                 "role": "assistant",
-                "content": help_text,
-                "already_displayed": True
+                "content": help_text
             })
             
             # Clear the pending help
@@ -420,17 +352,30 @@ def main():
             example_text = st.session_state.pending_example["example_text"]
             question_text = st.session_state.pending_example["question_text"]
             
-            # Create the full message content for chat history
-            full_content = f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
+            # Render the example
+            st.markdown(
+                f"""
+                <div style="display: flex; margin-bottom: 15px;">
+                  <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
+                    <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
+                    <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+                      <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
+                      <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
+                    </div>
+                    <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
+                      <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
+                      <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-            # Use the ChatUI's display method
-            services["chat_ui"]._display_example_and_question(full_content)
-            
-            # Save this to visible messages with a flag to avoid duplicate display
+            # Save this to visible messages for history
             st.session_state.visible_messages.append({
                 "role": "assistant", 
-                "content": full_content,
-                "already_displayed": True
+                "content": f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
             })
             
             # Clear the pending example so it doesn't show again
@@ -468,14 +413,15 @@ def main():
                     st.success("Completion notification sent!")
                     st.session_state.completion_email_sent = True
         else:
-            # Define button callbacks
+            # Add help/example buttons if not in summary mode - REPLACED with callback versions
+            # help_button, example_button = services["chat_ui"].add_help_example_buttons()
+            
+            # Button callbacks
             def on_help_click():
                 st.session_state.help_button_clicked = True
-                st.session_state.example_button_clicked = False
                 
             def on_example_click():
                 st.session_state.example_button_clicked = True
-                st.session_state.help_button_clicked = False
             
             # Create buttons with callbacks
             buttons_col1, buttons_col2 = st.columns(2)
@@ -484,7 +430,7 @@ def main():
             with buttons_col2:
                 st.button("Example", key="example_button", on_click=on_example_click)
             
-            # Process help button click
+            # Process help button click - UPDATED to use session state
             if st.session_state.help_button_clicked:
                 # Get the current question context
                 last_question = None
@@ -501,11 +447,8 @@ def main():
                 })
                 help_messages.append({"role": "user", "content": "I need help with this question"})
                 
-                # Display loading spinner while waiting for response
-                with st.spinner("Generating help..."):
-                    services["chat_ui"].render_progress_indicator()
-                    # Get AI response
-                    help_response = services["ai_service"].get_response(help_messages)
+                # Get AI response
+                help_response = services["ai_service"].get_response(help_messages)
                 
                 # Add help interaction to chat history
                 st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
@@ -523,7 +466,7 @@ def main():
                 # Force a rerun
                 st.rerun()
             
-            # Process example button click
+            # Process example button click - UPDATED to use session state
             if st.session_state.example_button_clicked:
                 # Extract the last question from the assistant
                 last_question = None
@@ -551,10 +494,7 @@ def main():
                         {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
                     ]
                     
-                    # Display loading spinner while waiting for response
-                    with st.spinner("Generating example..."):
-                        services["chat_ui"].render_progress_indicator()
-                        example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
+                    example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
                     
                     # Add to chat history
                     st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
@@ -620,10 +560,7 @@ def main():
                                 {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
                             ]
                             
-                            # Display loading spinner
-                            with st.spinner("Generating example..."):
-                                services["chat_ui"].render_progress_indicator()
-                                example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
+                            example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
                             
                             # Add to chat history
                             st.session_state.chat_history.append({"role": "user", "content": user_input})
@@ -690,11 +627,8 @@ def main():
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        # Add loading spinner while waiting for the AI response
-                        with st.spinner("Thinking..."):
-                            services["chat_ui"].render_progress_indicator()
-                            # Get AI response
-                            ai_response = services["ai_service"].get_response(st.session_state.chat_history)
+                        # Get AI response
+                        ai_response = services["ai_service"].get_response(st.session_state.chat_history)
                         
                         # Process special message formats from the AI
                         is_topic_update = services["topic_tracker"].process_topic_update(ai_response)
@@ -854,20 +788,6 @@ def main():
             
             The system will restore your conversation exactly where you left off, and the AI will remember
             the context of your previous discussion.
-            """)
-        
-        with st.expander("Can I use this questionnaire on a mobile device?"):
-            st.write("""
-            Yes! The ACE Questionnaire is designed to work on both desktop and mobile devices. The interface will 
-            automatically adjust to fit different screen sizes. However, for the best experience, we recommend using
-            a larger screen if possible, especially when reviewing the final summary and downloading reports.
-            """)
-            
-        with st.expander("Can I change the theme?"):
-            st.write("""
-            Yes! You can toggle between light and dark themes using the "Toggle Theme" button in the Display Settings
-            section of the sidebar. This allows you to choose the display option that works best for your environment
-            and preferences.
             """)
 
 # Add sidebar UI

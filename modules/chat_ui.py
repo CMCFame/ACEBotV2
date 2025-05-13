@@ -21,10 +21,17 @@ class ChatUI:
                 user_label = st.session_state.user_info.get("name", "You") or "You"
                 st.markdown(
                     f"""
+<<<<<<< HEAD
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
                       <div style="background-color: #e8f4f8; border-radius: 15px 15px 0 15px; padding: 12px 18px; max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;">
                         <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">{user_label}</p>
                         <p style="margin: 5px 0 0 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{message["content"]}</p>
+=======
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                      <div style="background-color: #e6f7ff; border-radius: 15px 15px 0 15px; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>{user_label}</strong></p>
+                        <p style="margin: 0; white-space: pre-wrap;">{message["content"]}</p>
+>>>>>>> parent of 94e27a0 (ok)
                       </div>
                     </div>
                     """,
@@ -34,6 +41,7 @@ class ChatUI:
             elif message["role"] == "assistant":
                 content = message["content"]
                 
+<<<<<<< HEAD
                 # DIRECT PATTERN MATCHING FOR EXAMPLE MESSAGES
                 if "Example:" in content and ("To continue with our question" in content or "font-style: italic" in content):
                     if "<div" in content or "<p" in content:
@@ -66,23 +74,35 @@ class ChatUI:
                     else:
                         # Plain text format
                         self._display_example_and_question(content)
+=======
+                # Check if content contains HTML tags (indicating raw HTML)
+                if "<div" in content or "<p" in content or "</div>" in content:
+                    # Escape HTML to show as plain text
+                    content = html.escape(content)
+                    
+                    # Create a regular assistant message with the escaped content
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; margin-bottom: 10px;">
+                          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 5px;">
+                              <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                            </div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+>>>>>>> parent of 94e27a0 (ok)
                 # HELP BOX
                 elif "I need help with this question" in content:
                     help_text = content.replace("I need help with this question", "").strip()
                     st.markdown(
                         f"""
-                        <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
-                          <div style="background-color: #f8f9fa; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
-                               width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; 
-                               border-left: 5px solid #17a2b8; position: relative;">
-                            <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
-                                 background-color: #f8f9fa; transform: rotate(45deg); border-left: 1px solid #e9ecef; 
-                                 border-bottom: 1px solid #e9ecef;"></div>
-                            <p style="margin: 0; color: #17a2b8; font-weight: 600; font-size: 15px;">💡 Help</p>
-                            <div style="margin-top: 8px;">
-                              <p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{help_text}</p>
-                            </div>
-                          </div>
+                        <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
+                          <p style="margin: 0; color: #333;"><strong>💡 Help:</strong></p>
+                          <p style="margin: 10px 0 0 0;">{help_text}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -91,16 +111,11 @@ class ChatUI:
                 elif "Welcome back!" in content and "I've restored your previous session" in content:
                     st.markdown(
                         f"""
-                        <div style="display: flex; margin-bottom: 15px; align-items: flex-start;">
-                          <div style="background-color: #e8f4f8; border-radius: 18px 18px 18px 4px; padding: 12px 18px; 
-                               width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; 
-                               border-left: 5px solid #4e8cff; position: relative;">
-                            <div style="position: absolute; left: -8px; top: 15px; width: 15px; height: 15px; 
-                                 background-color: #e8f4f8; transform: rotate(45deg); border-left: 1px solid #d1e7f0; 
-                                 border-bottom: 1px solid #d1e7f0;"></div>
-                            <p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">🔄 Session Restored</p>
-                            <div style="margin-top: 8px;">
-                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd; line-height: 1.5;">{content}</p>
+                        <div style="display: flex; margin-bottom: 15px;">
+                          <div style="background-color: #e8f4f8; border-radius: 15px 15px 15px 0; padding: 15px; max-width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #4e8cff;">
+                            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                            <div style="margin-top: 10px;">
+                              <p style="margin: 0; white-space: pre-wrap; color: #0d6efd;">{content}</p>
                             </div>
                           </div>
                         </div>
@@ -109,6 +124,7 @@ class ChatUI:
                     )
                 # REGULAR ASSISTANT MESSAGE
                 else:
+<<<<<<< HEAD
                     # Escape any HTML to prevent it from showing as raw tags
                     if "<div" in content or "<p" in content:
                         content = html.escape(content)
@@ -134,6 +150,22 @@ class ChatUI:
             """,
             unsafe_allow_html=True
         )
+=======
+                    # Create a clean, simple HTML structure for the message
+                    assistant_message_html = f"""
+                    <div style="display: flex; margin-bottom: 10px;">
+                      <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                        <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+                        <div style="margin-top: 5px;">
+                          <p style="margin: 0; white-space: pre-wrap;">{content}</p>
+                        </div>
+                      </div>
+                    </div>
+                    """
+                    
+                    # Render the HTML
+                    st.markdown(assistant_message_html, unsafe_allow_html=True)
+>>>>>>> parent of 94e27a0 (ok)
     
     def _render_example_format(self, example_text, question_text):
         """Directly render a formatted example without trying to parse HTML."""
@@ -221,6 +253,7 @@ class ChatUI:
         if not question_text and remaining:
             question_text = remaining
         
+<<<<<<< HEAD
         # Use the direct render method with the extracted content
         self._render_example_format(example_text, question_text)
     
@@ -245,6 +278,39 @@ class ChatUI:
                     """, 
                     unsafe_allow_html=True
                 )
+=======
+        # Create HTML with clear visual distinction between example and question
+        html = f"""
+        <div style="display: flex; margin-bottom: 15px;">
+          <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+            <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
+        """
+        
+        # Only add example box if example was found
+        if example_text:
+            html += f"""
+            <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
+              <p style="margin: 0; font-weight: bold; color: #856404;">📝 Example:</p>
+              <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic;">{example_text}</p>
+            </div>
+            """
+        
+        # Add question part if found
+        if question_text:
+            html += f"""
+            <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
+              <p style="margin: 0; font-weight: bold; color: #004085;">❓ Question:</p>
+              <p style="margin: 8px 0 0 0; color: #0c5460;">{question_text}</p>
+            </div>
+            """
+        
+        html += """
+          </div>
+        </div>
+        """
+        
+        st.markdown(html, unsafe_allow_html=True)
+>>>>>>> parent of 94e27a0 (ok)
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
@@ -277,7 +343,7 @@ class ChatUI:
             <div style="margin: 20px 0;">
                 <div style="display: flex; align-items: center; margin-bottom: 5px;">
                     <div style="flex-grow: 1; height: 20px; background-color: #f0f2f6; border-radius: 10px; overflow: hidden;">
-                        <div style="width: {progress_pct}%; height: 100%; background-color: var(--primary-red, #D22B2B); border-radius: 10px;"></div>
+                        <div style="width: {progress_pct}%; height: 100%; background-color: var(--primary-red); border-radius: 10px;"></div>
                     </div>
                     <div style="margin-left: 10px; font-weight: bold;">{progress_pct}%</div>
                 </div>
@@ -294,8 +360,8 @@ class ChatUI:
         # Add a more explicit completion message with button
         st.markdown(
             """
-            <div style="text-align: center; padding: 20px; background-color: var(--light-red, #f8d7da); border-radius: 10px; margin: 20px 0;">
-                <h2 style="color: var(--primary-red, #D22B2B); margin-bottom: 10px;">
+            <div style="text-align: center; padding: 20px; background-color: var(--light-red); border-radius: 10px; margin: 20px 0;">
+                <h2 style="color: var(--primary-red); margin-bottom: 10px;">
                     ✨ Questionnaire completed! ✨
                 </h2>
                 <p style="font-size: 16px; color: #1b5e20;">

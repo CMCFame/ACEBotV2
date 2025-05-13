@@ -202,39 +202,38 @@ class SessionManager:
                 if session_data["chat_history"][0].get("role") != "system":
                     session_data["chat_history"].insert(0, {"role": "system", "content": st.session_state.instructions})
                 
-                # Get current question and user info for context
+                # Create a much more detailed context restoration message
                 current_q_index = session_data.get('current_question_index', 0)
                 current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
-                user_name = session_data['user_info'].get('name', 'unknown')
-                company_name = session_data['user_info'].get('company', 'unknown company')
-                
-                # Get topics covered and still needed
-                covered_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v]
-                needed_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v]
                 
                 # Enhanced context restoration to help the AI understand exactly where we left off
                 restoration_context = {
                     "role": "system",
                     "content": f"""
-                    CONTEXT RESTORATION:
+                    CRITICAL CONTEXT RESTORATION:
                     
                     1. This conversation is being resumed from a previous session.
-                    2. User: {user_name} from {company_name}
-                    3. Current question: "{current_q}"
-                    4. Last saved: {session_data.get('saved_timestamp', 'unknown')}
+                    2. User name: {session_data['user_info'].get('name', 'unknown')}
+                    3. Company: {session_data['user_info'].get('company', 'unknown company')}
+                    4. Current question index: {current_q_index}
+                    5. Current question: {current_q}
+                    6. Last active timestamp: {session_data.get('saved_timestamp', 'unknown')}
                     
-                    Topics covered:
-                    {', '.join(covered_topics) or "None yet"}
+                    Topics already covered in detail:
+                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v])}
                     
                     Topics still needed:
-                    {', '.join(needed_topics) or "All topics covered"}
+                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v])}
                     
                     YOU MUST:
-                    - Continue naturally from where you left off
-                    - Do not repeat questions already answered
-                    - Focus on gathering information about missing topics
-                    - Briefly summarize what you've learned so far (1-2 sentences)
-                    - Be conversational and friendly
+                    - Continue the conversation naturally from where it left off
+                    - DO NOT repeat questions that have already been asked
+                    - FOCUS on gathering information about missing topics
+                    - Acknowledge that the conversation is being resumed
+                    - Maintain a friendly, conversational tone
+                    - If the user seems confused, briefly remind them where you were in the conversation
+                    - If you want to summarize what you've learned so far to help reestablish context, do so BRIEFLY (1-2 sentences max)
+                    - Respect any previous statements about skipping certain questions or topics
                     """
                 }
                 
@@ -272,24 +271,9 @@ class SessionManager:
                 st.session_state.explicitly_finished = session_data["explicitly_finished"]
             
             # Add a visible message informing the user that the session was restored
-            current_q_index = session_data.get('current_question_index', 0)
-            current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
-            
-            # Get topics covered for a richer welcome back message
-            covered_topics = [TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v]
-            topics_covered_text = ""
-            if covered_topics:
-                topics_covered_text = f" So far, we've covered information about {', '.join(covered_topics[:3])}"
-                if len(covered_topics) > 3:
-                    topics_covered_text += " and more."
-                else:
-                    topics_covered_text += "."
-            
-            welcome_message = f"👋 Welcome back! I've restored your previous session.{topics_covered_text} We were discussing {current_q}. Let's continue from where we left off."
-            
             st.session_state.visible_messages.append({
                 "role": "assistant", 
-                "content": welcome_message
+                "content": f"👋 Welcome back! I've restored your previous session. We were discussing {current_q}. Let's continue from where we left off."
             })
             
             # Mark restoration as complete
