@@ -193,10 +193,955 @@ def add_sidebar_ui():
             except Exception as e:
                 st.error(f"Error processing file: {e}")
 
+# Add to app.py - New login interface
+
+def login_page():
+    """Display the login page."""
+    auth_service = AuthenticationService()
+    
+    # Check if already logged in
+    if auth_service.is_authenticated():
+        return True
+    
+    st.markdown(
+        """
+        <div style="text-align: center; padding: 10px 0 20px 0;">
+            <h1 style="color: #D22B2B; margin-bottom: 5px;">ACE Questionnaire</h1>
+            <p style="color: #555; font-size: 16px;">
+                Secure Login Required
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Create tabs for login and password reset
+    login_tab, reset_tab = st.tabs(["Login", "Reset Password"])
+    
+    with login_tab:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+            
+            if submit:
+                if not username or not password:
+                    st.error("Please enter both username and password")
+                else:
+                    result = auth_service.authenticate_user(username, password)
+                    if result["success"]:
+                        st.success("Login successful!")
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            user=username, 
+                            details={"action": "login"}
+                        )
+                        time.sleep(1)  # Brief pause before redirect
+                        return True
+                    else:
+                        if "lockout" in result and result["lockout"]:
+                            st.error("Too many failed login attempts. Please try again later.")
+                            st.session_state.audit_logger.log_event(
+                                "authentication", 
+                                details={"action": "login_lockout", "username_attempt": username},
+                                status="failure"
+                            )
+                        else:
+                            st.error(result["message"])
+                            st.session_state.audit_logger.log_event(
+                                "authentication", 
+                                details={"action": "login_failed", "username_attempt": username},
+                                status="failure"
+                            )
+    
+    with reset_tab:
+        with st.form("reset_form"):
+            reset_username = st.text_input("Username", key="reset_username")
+            
+            # Security questions
+            q1_answer = st.text_input("What is your mother's maiden name?", type="password")
+            q2_answer = st.text_input("What was your first pet's name?", type="password")
+            
+            reset_submit = st.form_submit_button("Reset Password")
+            
+            if reset_submit:
+                if not reset_username or not q1_answer or not q2_answer:
+                    st.error("Please answer all security questions")
+                else:
+                    answers = {
+                        "What is your mother's maiden name?": q1_answer,
+                        "What was your first pet's name?": q2_answer
+                    }
+                    result = auth_service.reset_password_with_security_questions(reset_username, answers)
+                    if result["success"]:
+                        st.success("Password reset successful!")
+                        st.info(f"Your temporary password is: {result['temp_password']}")
+                        st.warning("Please login with this password and change it immediately.")
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            details={"action": "password_reset", "username": reset_username},
+                            status="success"
+                        )
+                    else:
+                        st.error(result["message"])
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            details={"action": "password_reset_failed", "username_attempt": reset_username},
+                            status="failure"
+                        )
+    
+    return False
+
+# Add to app.py - BAA compliance UI for admins
+
+def baa_management_ui():
+    """Display BAA management interface for admins."""
+    # Only show to admins
+    if st.session_state.get("user", {}).get("role") != "admin":
+        st.warning("You do not have permission to access this area.")
+        return
+    
+    baa_manager = BAAComplianceManager()
+    
+    st.markdown("## BAA Management")
+    
+    # Display current BAA status
+    baa_status = baa_manager.check_baa_status()
+    
+    status_colors = {
+        "active": "green",
+        "inactive": "red",
+        "expired": "red",
+        "review_overdue": "orange"
+    }
+    
+    status_color = status_colors.get(baa_status["status"], "gray")
+    
+    st.markdown(
+        f"""
+        <div style="padding: 10px; background-color: {status_color}; color: white; border-radius: 5px; margin-bottom: 20px;">
+            <strong>BAA Status:</strong> {baa_status["status"].upper()} - {baa_status["message"]}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Create tabs for different BAA management functions
+    tab1, tab2, tab3 = st.tabs(["BAA Details", "Authorized Personnel", "Compliance Logs"])
+    
+    with tab1:
+        # BAA information form
+        st.markdown("### BAA Details")
+        
+        with st.form("baa_info_form"):
+            covered_entity = st.text_input("Covered Entity Name", baa_manager.baa_info["covered_entity"])
+            business_associate = st.text_input("Business Associate Name", baa_manager.baa_info["business_associate"])
+            
+            # Handle dates
+            effective_date_str = baa_manager.baa_info["effective_date"] or datetime.now().isoformat()
+            expiration_date_str = baa_manager.baa_info["expiration_date"] or (datetime.now() + timedelta(days=365)).isoformat()
+            
+            effective_date = st.date_input("Effective Date", datetime.fromisoformat(effective_date_str))
+            expiration_date = st.date_input("Expiration Date", datetime.fromisoformat(expiration_date_str))
+            last_review_date = st.date_input(
+                "Last Review Date", 
+                datetime.fromisoformat(baa_manager.baa_info["last_review_date"]) if baa_manager.baa_info["last_review_date"] else datetime.now()
+            )
+            
+            # Data handling requirements
+            st.markdown("#### Data Handling Requirements")
+            requirements = baa_manager.baa_info["data_handling_requirements"]
+            
+            encryption_required = st.checkbox("Encryption Required", requirements["encryption_required"])
+            access_controls_required = st.checkbox("Access Controls Required", requirements["access_controls_required"])
+            audit_logging_required = st.checkbox("Audit Logging Required", requirements["audit_logging_required"])
+            
+            retention_period = st.number_input(
+                "Retention Period (days)", 
+                min_value=30, 
+                max_value=3650,  # 10 years max
+                value=requirements["retention_period_days"]
+            )
+            
+            breach_notification = st.number_input(
+                "Breach Notification Window (hours)", 
+                min_value=1, 
+                max_value=168,  # 1 week max
+                value=requirements["breach_notification_window_hours"]
+            )
+            
+            submit_baa = st.form_submit_button("Update BAA Information")
+            
+            if submit_baa:
+                # Prepare updated BAA info
+                updated_info = {
+                    "covered_entity": covered_entity,
+                    "business_associate": business_associate,
+                    "effective_date": effective_date.isoformat(),
+                    "expiration_date": expiration_date.isoformat(),
+                    "last_review_date": last_review_date.isoformat(),
+                    "data_handling_requirements": {
+                        "encryption_required": encryption_required,
+                        "access_controls_required": access_controls_required,
+                        "audit_logging_required": audit_logging_required,
+                        "retention_period_days": retention_period,
+                        "breach_notification_window_hours": breach_notification
+                    }
+                }
+                
+                result = baa_manager.update_baa_info(updated_info)
+                
+                if result["success"]:
+                    st.success(result["message"])
+                    st.session_state.audit_logger.log_event(
+                        "baa_update", 
+                        user=st.session_state["user"]["username"],
+                        details={"action": "update_baa"}
+                    )
+                else:
+                    st.error(result["message"])
+    
+    with tab2:
+        # Authorized personnel management
+        st.markdown("### Authorized Personnel")
+        
+        # Display current authorized personnel
+        personnel = baa_manager.baa_info["authorized_personnel"]
+        active_personnel = [p for p in personnel if p.get("active", True)]
+        
+        if active_personnel:
+            st.markdown("#### Currently Authorized")
+            for i, person in enumerate(active_personnel):
+                st.markdown(
+                    f"""
+                    {i+1}. **{person['username']}** - {person['role']}  
+                    *Added on: {datetime.fromisoformat(person['date_added']).strftime('%Y-%m-%d')}*
+                    """
+                )
+        else:
+            st.info("No authorized personnel found.")
+        
+        # Add new personnel
+        st.markdown("#### Add New Personnel")
+        with st.form("add_personnel_form"):
+            new_username = st.text_input("Username")
+            new_role = st.selectbox("Role", ["Admin", "Provider", "Staff", "Support", "Auditor"])
+            
+            add_user = st.form_submit_button("Add User")
+            
+            if add_user:
+                if not new_username or not new_role:
+                    st.error("Please provide both username and role")
+                else:
+                    result = baa_manager.add_authorized_personnel(
+                        new_username, 
+                        new_role, 
+                        st.session_state["user"]["username"]
+                    )
+                    
+                    if result["success"]:
+                        st.success(result["message"])
+                        st.session_state.audit_logger.log_event(
+                            "baa_personnel", 
+                            user=st.session_state["user"]["username"],
+                            details={"action": "add_personnel", "added_user": new_username}
+                        )
+                    else:
+                        st.error(result["message"])
+        
+        # Remove personnel
+        st.markdown("#### Remove Personnel")
+        with st.form("remove_personnel_form"):
+            if active_personnel:
+                remove_username = st.selectbox(
+                    "Select User to Remove", 
+                    [p["username"] for p in active_personnel]
+                )
+                removal_reason = st.text_area("Reason for Removal")
+                
+                remove_user = st.form_submit_button("Remove User")
+                
+                if remove_user:
+                    if not removal_reason:
+                        st.error("Please provide a reason for removal")
+                    else:
+                        result = baa_manager.remove_authorized_personnel(
+                            remove_username, 
+                            removal_reason, 
+                            st.session_state["user"]["username"]
+                        )
+                        
+                        if result["success"]:
+                            st.success(result["message"])
+                            st.session_state.audit_logger.log_event(
+                                "baa_personnel", 
+                                user=st.session_state["user"]["username"],
+                                details={
+                                    "action": "remove_personnel", 
+                                    "removed_user": remove_username,
+                                    "reason": removal_reason
+                                }
+                            )
+                        else:
+                            st.error(result["message"])
+            else:
+                st.info("No users to remove.")
+    
+    with tab3:
+        # BAA compliance logs
+        st.markdown("### BAA Compliance Logs")
+        
+        log_dir = os.path.join(baa_manager.baa_dir, "logs")
+        if os.path.exists(log_dir):
+            log_files = [f for f in os.listdir(log_dir) if f.startswith("baa_log_")]
+            if log_files:
+                selected_log = st.selectbox("Select Log File", log_files)
+                
+                log_path = os.path.join(log_dir, selected_log)
+                log_entries = []
+                
+                with open(log_path, 'r') as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line.strip())
+                            log_entries.append(entry)
+                        except:
+                            pass
+                
+                if log_entries:
+                    # Show logs in a dataframe
+                    import pandas as pd
+                    df = pd.DataFrame(log_entries)
+                    st.dataframe(df)
+                    
+                    # Export option
+                    if st.button("Export Logs"):
+                        csv = df.to_csv().encode('utf-8')
+                        st.download_button(
+                            "Download CSV",
+                            csv,
+                            f"baa_logs_{datetime.now().strftime('%Y%m%d')}.csv",
+                            "text/csv",
+                            key="download-logs"
+                        )
+                else:
+                    st.info("No log entries found.")
+            else:
+                st.info("No log files found.")
+        else:
+            st.info("No logs directory found.")
+
+# Add to app.py - Emergency Access UI
+
+def emergency_access_ui():
+    """Display emergency access interface."""
+    # Initialize emergency access manager
+    emergency_manager = EmergencyAccessManager()
+    
+    st.markdown("## Emergency Access")
+    
+    st.warning(
+        "⚠️ IMPORTANT: Emergency access to PHI is strictly regulated under HIPAA. "
+        "Use this feature only in genuine emergencies. All access is logged and notified."
+    )
+    
+    # Create tabs for different emergency functions
+    tab1, tab2 = st.tabs(["Emergency Access", "Data Breach Reporting"])
+    
+    with tab1:
+        st.markdown("### Emergency PHI Access")
+        
+        with st.form("emergency_access_form"):
+            # Reason selection
+            reason_options = [
+                "Medical emergency requiring immediate data access",
+                "System failure preventing normal access",
+                "Audit or investigation by authorized personnel",
+                "Data recovery operation",
+                "Other (specify)"
+            ]
+            
+            reason = st.selectbox("Reason for Emergency Access", reason_options)
+            
+            # If "Other" is selected, ask for specific reason
+            if reason == "Other (specify)":
+                specific_reason = st.text_area("Please specify the emergency reason", "")
+                reason = f"Other: {specific_reason}"
+            
+            # Select data to access
+            data_options = [
+                "User profile information",
+                "Questionnaire responses",
+                "Full conversation history",
+                "All session data"
+            ]
+            
+            accessed_data = st.multiselect("Data to be accessed", data_options)
+            
+            # Require acknowledgment
+            acknowledgment = st.checkbox(
+                "I acknowledge that this is a legitimate emergency and my access will be logged and reviewed."
+            )
+            
+            # Submit button
+            submit_emergency = st.form_submit_button("Request Emergency Access")
+            
+            if submit_emergency:
+                if not acknowledgment:
+                    st.error("You must acknowledge the emergency access policy.")
+                elif not accessed_data:
+                    st.error("You must select data to access.")
+                else:
+                    # Log the emergency access
+                    result = emergency_manager.log_emergency_access(
+                        st.session_state["user"]["username"],
+                        reason,
+                        ", ".join(accessed_data)
+                    )
+                    
+                    if result["success"]:
+                        st.success("Emergency access granted and logged.")
+                        st.session_state.audit_logger.log_event(
+                            "emergency_access", 
+                            user=st.session_state["user"]["username"],
+                            details={"reason": reason, "accessed_data": accessed_data},
+                            status="granted"
+                        )
+                        
+                        # Grant access based on selection
+                        if "All session data" in accessed_data:
+                            # Show all sessions
+                            server_storage = ServerStorage()
+                            sessions = server_storage.list_sessions(limit=100)
+                            
+                            st.markdown("### All Available Sessions")
+                            for session in sessions:
+                                st.markdown(
+                                    f"""
+                                    **Session ID:** {session['session_id']}  
+                                    **User:** {session['user_name']}  
+                                    **Company:** {session['company']}  
+                                    **Last Saved:** {session['last_saved']}  
+                                    **Progress:** {session['progress']}%
+                                    
+                                    [View Complete Session Data](javascript:void(0))
+                                    
+                                    ---
+                                    """
+                                )
+                        
+                        elif "Questionnaire responses" in accessed_data:
+                            # Show a search interface for responses
+                            st.markdown("### Search Questionnaire Responses")
+                            
+                            search_term = st.text_input("Search term")
+                            if search_term:
+                                st.markdown(f"Searching for: **{search_term}**")
+                                # In a real implementation, this would search through responses
+                                st.info("This is a simulated search result in emergency mode")
+                    else:
+                        st.error(result["message"])
+    
+    with tab2:
+        st.markdown("### Report Data Breach")
+        
+        with st.form("data_breach_form"):
+            detected_by = st.text_input("Detected By", st.session_state["user"]["username"])
+            description = st.text_area("Description of the Breach", "")
+            
+            affected_data = st.text_area("Potentially Affected Data", "")
+            immediate_actions = st.text_area("Immediate Actions Taken", "")
+            next_steps = st.text_area("Next Steps Planned", "")
+            contact_info = st.text_input("Contact Information", "")
+            
+            submit_breach = st.form_submit_button("Report Data Breach")
+            
+            if submit_breach:
+                required_fields = [description, affected_data, immediate_actions, next_steps, contact_info]
+                if any(not field for field in required_fields):
+                    st.error("All fields are required.")
+                else:
+                    # Report the breach
+                    result = emergency_manager.report_data_breach(
+                        detected_by,
+                        description,
+                        affected_data,
+                        immediate_actions,
+                        next_steps,
+                        contact_info
+                    )
+                    
+                    if result["success"]:
+                        st.success(f"Data breach reported. Breach ID: {result['breach_id']}")
+                        st.session_state.audit_logger.log_event(
+                            "data_breach", 
+                            user=st.session_state["user"]["username"],
+                            details={"breach_id": result['breach_id'], "description": description},
+                            status="reported"
+                        )
+                        
+                        # Show notification result
+                        if result["notification_result"]["success"]:
+                            st.info(result["notification_result"]["message"])
+                        else:
+                            st.warning(f"Notification issue: {result['notification_result']['message']}")
+                    else:
+                        st.error(result["message"])
+
+# Add to app.py - HIPAA Security Settings
+
+def hipaa_security_settings():
+    """Display HIPAA security settings interface for admins."""
+    # Only allow admins
+    if st.session_state.get("user", {}).get("role") != "admin":
+        st.warning("You do not have permission to access this area.")
+        return
+    
+    st.markdown("## HIPAA Security Settings")
+    
+    # Create tabs for different security settings
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "General Settings", 
+        "Data Retention", 
+        "Notification Settings",
+        "Security Reports"
+    ])
+    
+    with tab1:
+        st.markdown("### General HIPAA Security Settings")
+        
+        # Encryption settings
+        st.markdown("#### Encryption Settings")
+        
+        current_key = st.secrets.get("ENCRYPTION_KEY", "Not configured")
+        if len(current_key) > 10:
+            masked_key = current_key[:5] + "..." + current_key[-5:]
+        else:
+            masked_key = "Not properly configured"
+            
+        st.info(f"Current encryption key status: {masked_key}")
+        
+        with st.expander("Encryption Key Management"):
+            st.markdown(
+                """
+                For security reasons, encryption keys cannot be changed directly through the UI.
+                To update the encryption key:
+                
+                1. Generate a new Fernet key using the cryptography library
+                2. Update the ENCRYPTION_KEY in your Streamlit secrets.toml file
+                3. Restart the application
+                
+                **IMPORTANT:** After changing the encryption key, previously encrypted data 
+                will no longer be accessible. Plan for data migration if needed.
+                """
+            )
+            
+            if st.button("Generate New Key Example"):
+                from cryptography.fernet import Fernet
+                new_key = Fernet.generate_key().decode()
+                st.code(f"ENCRYPTION_KEY = '{new_key}'")
+                st.info("Add this to your secrets.toml file")
+        
+        # Access control settings
+        st.markdown("#### Access Control Settings")
+        
+        session_timeout = st.slider(
+            "Session Timeout (minutes)", 
+            min_value=5, 
+            max_value=60,
+            value=30,
+            step=5
+        )
+        
+        password_expiry = st.slider(
+            "Password Expiry (days)", 
+            min_value=30, 
+            max_value=365,
+            value=90,
+            step=30
+        )
+        
+        login_attempts = st.slider(
+            "Max Failed Login Attempts", 
+            min_value=3, 
+            max_value=10,
+            value=5
+        )
+        
+        lockout_duration = st.slider(
+            "Account Lockout Duration (minutes)", 
+            min_value=5, 
+            max_value=60,
+            value=15,
+            step=5
+        )
+        
+        if st.button("Save Security Settings"):
+            # In a real implementation, this would update the settings in a secure storage
+            st.success("Security settings updated.")
+            st.session_state.audit_logger.log_event(
+                "security_settings", 
+                user=st.session_state["user"]["username"],
+                details={
+                    "action": "update_security_settings",
+                    "changes": {
+                        "session_timeout": session_timeout,
+                        "password_expiry": password_expiry,
+                        "login_attempts": login_attempts,
+                        "lockout_duration": lockout_duration
+                    }
+                }
+            )
+    
+    with tab2:
+        st.markdown("### Data Retention Settings")
+        
+        # Initialize data retention manager
+        data_retention = DataRetentionManager()
+        
+        retention_period = st.slider(
+            "Data Retention Period (days)", 
+            min_value=365, 
+            max_value=2555,  # ~7 years
+            value=730,  # 2 years default
+            step=365
+        )
+        
+        auto_archive = st.checkbox("Automatically archive completed questionnaires after 30 days", True)
+        secure_delete = st.checkbox("Use secure deletion for expired data", True)
+        
+        if st.button("Save Retention Settings"):
+            st.success("Data retention settings updated.")
+            st.session_state.audit_logger.log_event(
+                "data_retention", 
+                user=st.session_state["user"]["username"],
+                details={
+                    "action": "update_retention_settings",
+                    "changes": {
+                        "retention_period": retention_period,
+                        "auto_archive": auto_archive,
+                        "secure_delete": secure_delete
+                    }
+                }
+            )
+        
+        # Manual data retention actions
+        st.markdown("#### Manual Data Management")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Run Data Retention Policy Now"):
+                with st.spinner("Applying data retention policy..."):
+                    result = data_retention.apply_retention_policy()
+                    
+                st.success(f"Data retention completed: {result['files_archived']} files archived, {result['files_purged']} files purged")
+                st.session_state.audit_logger.log_event(
+                    "data_retention", 
+                    user=st.session_state["user"]["username"],
+                    details={"action": "manual_retention", "result": result}
+                )
+        
+        with col2:
+            if st.button("Archive Completed Questionnaires"):
+                with st.spinner("Archiving completed questionnaires..."):
+                    result = data_retention.archive_completed_sessions()
+                    
+                st.success(f"Archiving completed: {result['files_archived']} files archived")
+                st.session_state.audit_logger.log_event(
+                    "data_retention", 
+                    user=st.session_state["user"]["username"],
+                    details={"action": "manual_archive", "result": result}
+                )
+    
+    with tab3:
+        st.markdown("### Notification Settings")
+        
+        # Initialize emergency manager for notification settings
+        emergency_manager = EmergencyAccessManager()
+        
+        st.markdown("#### Breach Notification Recipients")
+        
+        # Current recipients
+        current_recipients = emergency_manager.settings.get("notification_recipients", [])
+        
+        recipient_text = st.text_area(
+            "Email Recipients (one per line)", 
+            "\n".join(current_recipients) if current_recipients else ""
+        )
+        
+        # Parse recipients
+        new_recipients = [r.strip() for r in recipient_text.split("\n") if r.strip()]
+        
+        st.markdown("#### Emergency Contacts")
+        
+        # Current emergency contacts
+        current_contacts = emergency_manager.settings.get("emergency_contacts", [])
+        
+        contacts_text = st.text_area(
+            "Emergency Contacts (one per line)", 
+            "\n".join(current_contacts) if current_contacts else ""
+        )
+        
+        # Parse emergency contacts
+        new_contacts = [c.strip() for c in contacts_text.split("\n") if c.strip()]
+        
+        st.markdown("#### Breach Notification Template")
+        
+        notification_template = st.text_area(
+            "Notification Template", 
+            emergency_manager.settings.get("breach_notification_template", "")
+        )
+        
+        if st.button("Save Notification Settings"):
+            # Update notification settings
+            result = emergency_manager.update_notification_settings({
+                "notification_recipients": new_recipients,
+                "emergency_contacts": new_contacts,
+                "breach_notification_template": notification_template
+            })
+            
+            if result["success"]:
+                st.success("Notification settings updated.")
+                st.session_state.audit_logger.log_event(
+                    "notification_settings", 
+                    user=st.session_state["user"]["username"],
+                    details={"action": "update_notification_settings"}
+                )
+            else:
+                st.error(result["message"])
+    
+    with tab4:
+        st.markdown("### Security Reports")
+        
+        report_type = st.selectbox(
+            "Report Type", 
+            ["Access Audit Log", "Emergency Access Log", "Data Breach Reports", "Security Settings Changes"]
+        )
+        
+        start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+        end_date = st.date_input("End Date", datetime.now())
+        
+        if st.button("Generate Report"):
+            st.info(f"Generating {report_type} report from {start_date} to {end_date}")
+            
+            # In a real implementation, this would generate the actual report
+            # For now, let's show a sample report
+            if report_type == "Access Audit Log":
+                log_entries = [
+                    {
+                        "timestamp": "2023-07-01T14:32:15",
+                        "user": "admin",
+                        "action": "login",
+                        "ip_address": "192.168.1.1",
+                        "status": "success"
+                    },
+                    {
+                        "timestamp": "2023-07-02T09:15:22",
+                        "user": "provider1",
+                        "action": "view_session",
+                        "ip_address": "192.168.1.2",
+                        "status": "success"
+                    }
+                ]
+                
+                import pandas as pd
+                df = pd.DataFrame(log_entries)
+                st.dataframe(df)
+                
+                # Export options
+                if st.button("Export Report"):
+                    csv = df.to_csv().encode('utf-8')
+                    st.download_button(
+                        "Download CSV",
+                        csv,
+                        f"security_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                        "text/csv",
+                        key="download-report"
+                    )
+
 def main():
     """Main application function."""
     # Create tabs
     tab1, tab2, tab3 = st.tabs(["Questionnaire", "Instructions", "FAQ"])
+
+# Add to main() in app.py
+# Modify the main function in app.py to add HIPAA compliance
+
+def main():
+    # Initialize audit logger
+    if 'audit_logger' not in st.session_state:
+        st.session_state.audit_logger = AuditLogger()
+    
+    # Create a sidebar menu with HIPAA-compliant options
+    with st.sidebar:
+        st.title("ACE Questionnaire")
+        
+        # Check authentication first
+        if 'user' not in st.session_state:
+            # Not logged in, show only login page
+            login_page()
+            return
+            
+        # If logged in, show menu options
+        menu = ["Questionnaire", "Instructions", "FAQ"]
+        
+        # Add admin options if user is admin
+        if st.session_state['user'].get('role') == 'admin':
+            menu.extend(["BAA Management", "HIPAA Security", "User Management"])
+        
+        # Add emergency access option for all authenticated users
+        menu.append("Emergency Access")
+        
+        selected_option = st.selectbox("Menu", menu)
+        
+        # Show user info and logout button
+        st.markdown(f"Logged in as: **{st.session_state['user']['username']}**")
+        if st.button("Logout"):
+            auth_service = AuthenticationService()
+            auth_service.logout_user()
+            st.session_state.audit_logger.log_event(
+                "authentication", 
+                user=st.session_state['user']['username'],
+                details={"action": "logout"}
+            )
+            st.rerun()
+    
+    # Display the selected option
+    if selected_option == "Questionnaire":
+        questionnaire_page()
+    elif selected_option == "Instructions":
+        instructions_page()
+    elif selected_option == "FAQ":
+        faq_page()
+    elif selected_option == "BAA Management":
+        baa_management_ui()
+    elif selected_option == "HIPAA Security":
+        hipaa_security_settings()
+    elif selected_option == "User Management":
+        user_management_ui()
+    elif selected_option == "Emergency Access":
+        emergency_access_ui()
+
+def questionnaire_page():
+    """Display the main questionnaire page."""
+    # Add HIPAA compliance header
+    st.markdown(
+        """
+        <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 20px; border-left: 5px solid #17a2b8;">
+            <p style="margin: 0; color: #17a2b8;"><strong>HIPAA Compliance Notice:</strong> All data entered in this questionnaire is protected under HIPAA regulations. Access to this information is logged and monitored.</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Rest of your existing questionnaire code...
+    # [Original code for the questionnaire]
+
+def login_page():
+    """Display the login page."""
+    auth_service = AuthenticationService()
+    
+    # Check if already logged in
+    if auth_service.is_authenticated():
+        return
+    
+    st.markdown(
+        """
+        <div style="text-align: center; padding: 10px 0 20px 0;">
+            <h1 style="color: #D22B2B; margin-bottom: 5px;">ACE Questionnaire</h1>
+            <p style="color: #555; font-size: 16px;">
+                Secure Login Required
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Add HIPAA compliance notice
+    st.markdown(
+        """
+        <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 20px; border-left: 5px solid #17a2b8;">
+            <p style="margin: 0; color: #17a2b8;"><strong>HIPAA Compliance Notice:</strong> This system contains protected health information (PHI) and is governed by HIPAA regulations. Unauthorized access is prohibited by law.</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Create tabs for login and password reset
+    login_tab, reset_tab = st.tabs(["Login", "Reset Password"])
+    
+    with login_tab:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+            
+            if submit:
+                if not username or not password:
+                    st.error("Please enter both username and password")
+                else:
+                    result = auth_service.authenticate_user(username, password)
+                    if result["success"]:
+                        st.success("Login successful!")
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            user=username, 
+                            details={"action": "login"}
+                        )
+                        time.sleep(1)  # Brief pause before redirect
+                        st.rerun()
+                    else:
+                        if "lockout" in result and result["lockout"]:
+                            st.error("Too many failed login attempts. Please try again later.")
+                            st.session_state.audit_logger.log_event(
+                                "authentication", 
+                                details={"action": "login_lockout", "username_attempt": username},
+                                status="failure"
+                            )
+                        else:
+                            st.error(result["message"])
+                            st.session_state.audit_logger.log_event(
+                                "authentication", 
+                                details={"action": "login_failed", "username_attempt": username},
+                                status="failure"
+                            )
+    
+    with reset_tab:
+        with st.form("reset_form"):
+            reset_username = st.text_input("Username", key="reset_username")
+            
+            # Security questions
+            q1_answer = st.text_input("What is your mother's maiden name?", type="password")
+            q2_answer = st.text_input("What was your first pet's name?", type="password")
+            
+            reset_submit = st.form_submit_button("Reset Password")
+            
+            if reset_submit:
+                if not reset_username or not q1_answer or not q2_answer:
+                    st.error("Please answer all security questions")
+                else:
+                    answers = {
+                        "What is your mother's maiden name?": q1_answer,
+                        "What was your first pet's name?": q2_answer
+                    }
+                    result = auth_service.reset_password_with_security_questions(reset_username, answers)
+                    if result["success"]:
+                        st.success("Password reset successful!")
+                        st.info(f"Your temporary password is: {result['temp_password']}")
+                        st.warning("Please login with this password and change it immediately.")
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            details={"action": "password_reset", "username": reset_username},
+                            status="success"
+                        )
+                    else:
+                        st.error(result["message"])
+                        st.session_state.audit_logger.log_event(
+                            "authentication", 
+                            details={"action": "password_reset_failed", "username_attempt": reset_username},
+                            status="failure"
+                        )
 
     with tab1:
         # Add ARCOS logo above the header
