@@ -222,6 +222,20 @@ def main():
             unsafe_allow_html=True
         )
         
+        # Add PII Disclosure banner
+        st.warning("""
+        **IMPORTANT: Data Privacy Notice**
+        
+        Please DO NOT enter any Personal Identifying Information (PII) in this questionnaire, including:
+        
+        • Home addresses or personal contact information
+        • Social security numbers or government IDs
+        • Personal financial information
+        • Any other sensitive personal data
+        
+        This questionnaire is designed to collect information about company processes only.
+        """)
+        
         # Initialize session state if not already done
         if not hasattr(st.session_state, 'initialized'):
             try:
@@ -617,6 +631,8 @@ def main():
                                 st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                             else:
                                 # Not ready - inform about missing topics/questions
+                                st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
+                                st.session_state.visible
                                 st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": summary_readiness["message"]})
                         
