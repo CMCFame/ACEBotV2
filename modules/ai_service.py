@@ -106,11 +106,23 @@ class AIService:
         """Separates the system prompt from the message list for Claude API."""
         system_prompt = ""
         chat_messages = []
+        
+        # Extract the first system message as the system prompt
         if messages and messages[0]["role"] == "system":
             system_prompt = messages[0]["content"]
-            chat_messages = messages[1:]
+            remaining_messages = messages[1:]
         else:
-            chat_messages = messages
+            remaining_messages = messages
+        
+        # Filter out any remaining system messages and keep only user/assistant
+        for msg in remaining_messages:
+            if isinstance(msg, dict) and msg.get("role") in ["user", "assistant"]:
+                chat_messages.append(msg)
+            elif isinstance(msg, dict) and msg.get("role") == "system":
+                # Log system messages that are being filtered out
+                print(f"--- DEBUG: Filtering out system message: {msg.get('content', '')[:100]}...")
+        
+        print(f"--- DEBUG: Final message count - System prompt: {len(system_prompt)} chars, Chat messages: {len(chat_messages)}")
         return system_prompt, chat_messages
 
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
@@ -134,15 +146,37 @@ class AIService:
             return error_msg
 
         system_prompt, claude_messages = self._separate_system_prompt(messages)
+        
+        # Additional validation: ensure all messages have required fields
+        validated_messages = []
+        for i, msg in enumerate(claude_messages):
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                # Only allow user and assistant roles
+                if msg["role"] in ["user", "assistant"]:
+                    # Ensure content is a string
+                    content = str(msg["content"]) if msg["content"] is not None else ""
+                    if content.strip():  # Only add non-empty messages
+                        validated_messages.append({
+                            "role": msg["role"],
+                            "content": content
+                        })
+                    else:
+                        print(f"--- DEBUG: Skipping empty message at index {i}")
+                else:
+                    print(f"--- DEBUG: Skipping message with invalid role '{msg['role']}' at index {i}")
+            else:
+                print(f"--- DEBUG: Skipping malformed message at index {i}: {msg}")
 
         body = {
             "anthropic_version": "bedrock-2023-05-31", 
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "messages": claude_messages
+            "messages": validated_messages
         }
-        if system_prompt: 
-            body["system"] = system_prompt
+        if system_prompt and system_prompt.strip(): 
+            body["system"] = system_prompt.strip()
+        
+        print(f"--- DEBUG: Sending {len(validated_messages)} messages to Claude")
 
         try:
             print(f"--- DEBUG: Calling Bedrock with model: {BEDROCK_MODEL_ID}")
