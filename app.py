@@ -435,9 +435,8 @@ def main():
                         break
                 
                 help_messages_for_ai = st.session_state.chat_history.copy()
-                # *** MODIFIED SECTION FOR HELP MESSAGES (on_click) START ***
                 help_messages_for_ai.append({
-                    "role": "user", # Changed from "system"
+                    "role": "user",
                     "content": (
                         "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
                         f"The user is asking for help with the CURRENT question which is: '{last_question}'.\n"
@@ -446,7 +445,6 @@ def main():
                         "[END_SYSTEM_INSTRUCTION]"
                     )
                 })
-                # *** MODIFIED SECTION FOR HELP MESSAGES (on_click) END ***
                 help_messages_for_ai.append({"role": "user", "content": "I need help with this question"})
                 
                 help_response_content = services["ai_service"].get_response(help_messages_for_ai)
@@ -454,7 +452,7 @@ def main():
                 st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
                 st.session_state.chat_history.append({"role": "assistant", "content": help_response_content})
                 st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
-                st.session_state.pending_help = help_response_content # To display it immediately
+                st.session_state.pending_help = help_response_content
                 st.session_state.help_button_clicked = False
                 st.rerun()
             
@@ -462,7 +460,6 @@ def main():
                 last_question = None
                 for msg in reversed(st.session_state.visible_messages):
                     if msg["role"] == "assistant" and "?" in msg["content"]:
-                        # Try to get the actual question part, excluding example prefix if any
                         content_parts = msg["content"].split("To continue with our question:")
                         if len(content_parts) > 1:
                             last_question = content_parts[-1].strip()
@@ -471,7 +468,7 @@ def main():
                         break
                 
                 if last_question:
-                    example_text_content = services["ai_service"].get_example_response(last_question) # This now returns only the example text
+                    example_text_content = services["ai_service"].get_example_response(last_question)
                     
                     st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
                     full_example_for_history = f"Example: {example_text_content}\n\nTo continue with our question:\n{last_question}"
@@ -496,9 +493,7 @@ def main():
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
                     if message_type["type"] == "example_request":
-                        # This logic is now largely handled by the example_button_clicked
-                        # but can be kept as a fallback if user types "example"
-                        st.session_state.example_button_clicked = True # Trigger the button logic
+                        st.session_state.example_button_clicked = True
                         st.rerun()
                         
                     elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
@@ -530,37 +525,47 @@ def main():
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
-                        
-                        is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content) # AI might send this spontaneously
-                        
-                        if not is_topic_update:
-                            st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
+                        try:
+                            # 1. Get main AI response
+                            ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
+                            print(f"DEBUG APP: Main AI Response Content: {ai_response_content[:200]}...")
+
+                            # Check if the AI directly returned a TOPIC_UPDATE
+                            is_topic_update_from_main_response = services["topic_tracker"].process_topic_update(ai_response_content)
                             
-                            # Force a topic update message after each regular response
-                            topic_check_messages_for_ai = st.session_state.chat_history.copy()
-                            # *** MODIFIED SECTION FOR TOPIC CHECK MESSAGES (user_input) START ***
-                            topic_check_messages_for_ai.append({
-                                "role": "user", # Changed from "system"
-                                "content": (
-                                    "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
-                                    "Based on all conversation so far, which topics have been covered from the list: "
-                                    "basic_info, staffing_details, contact_process, list_management, insufficient_staffing, "
-                                    "calling_logistics, list_changes, tiebreakers, additional_rules.\n"
-                                    "Respond ONLY with a TOPIC_UPDATE message in the exact JSON format that includes the status (true or false) of ALL topic areas. For example:\n"
-                                    "TOPIC_UPDATE: {\"basic_info\": true, \"staffing_details\": false, \"contact_process\": true, "
-                                    "\"list_management\": false, \"insufficient_staffing\": false, \"calling_logistics\": false, "
-                                    "\"list_changes\": false, \"tiebreakers\": false, \"additional_rules\": false}\n"
-                                    "[END_SYSTEM_INSTRUCTION]"
-                                )
-                            })
-                            # *** MODIFIED SECTION FOR TOPIC CHECK MESSAGES (user_input) END ***
-                            
-                            topic_update_response_content = services["ai_service"].get_response(topic_check_messages_for_ai)
-                            # This response itself might be the topic update, or it might be other text.
-                            # process_topic_update should handle this.
-                            services["topic_tracker"].process_topic_update(topic_update_response_content)
+                            if not is_topic_update_from_main_response:
+                                # If it's a regular assistant message, add it to history
+                                st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
+                                st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
+                                
+                                # 2. Force a topic update check after the main response
+                                topic_check_messages_for_ai = st.session_state.chat_history.copy()
+                                topic_check_messages_for_ai.append({
+                                    "role": "user",
+                                    "content": (
+                                        "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
+                                        "Based on all conversation so far, which topics have been covered from the list: "
+                                        "basic_info, staffing_details, contact_process, list_management, insufficient_staffing, "
+                                        "calling_logistics, list_changes, tiebreakers, additional_rules.\n"
+                                        "Respond ONLY with a TOPIC_UPDATE message in the exact JSON format that includes the status (true or false) of ALL topic areas. For example:\n"
+                                        "TOPIC_UPDATE: {\"basic_info\": true, \"staffing_details\": false, \"contact_process\": true, "
+                                        "\"list_management\": false, \"insufficient_staffing\": false, \"calling_logistics\": false, "
+                                        "\"list_changes\": false, \"tiebreakers\": false, \"additional_rules\": false}\n"
+                                        "[END_SYSTEM_INSTRUCTION]"
+                                    )
+                                })
+                                
+                                topic_update_response_content = services["ai_service"].get_response(topic_check_messages_for_ai)
+                                print(f"DEBUG APP: Topic Update AI Response: {topic_update_response_content[:200]}...")
+                                services["topic_tracker"].process_topic_update(topic_update_response_content)
+                            else:
+                                print("DEBUG APP: Main AI response was a TOPIC_UPDATE, no separate topic check needed.")
+
+                        except Exception as e:
+                            st.error(f"An error occurred while processing AI response: {e}. Please try again.")
+                            import traceback
+                            print(f"ERROR APP: AI response processing failed: {e}")
+                            print(f"ERROR APP: Traceback: {traceback.format_exc()}")
                         
                         if st.session_state.current_question_index == 0:
                             user_info_data = services["ai_service"].extract_user_info(user_input)
@@ -573,7 +578,6 @@ def main():
                                     "If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided.\n"
                                     "[END_SYSTEM_CONTEXT_UPDATE]"
                                 )
-                                # Add as a user message so it's seen by AI if not filtered by _separate_system_prompt
                                 st.session_state.chat_history.append({"role": "user", "content": context_message_content})
 
                         if st.session_state.current_question_index < len(st.session_state.questions):
