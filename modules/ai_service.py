@@ -4,18 +4,37 @@ import streamlit as st
 import json
 from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE #
 
+# modules/ai_service.py
+import boto3
+import streamlit as st # Make sure st is imported if not already for st.toast
+import json
+from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+
 class AIService:
-    def __init__(self, aws_region=BEDROCK_AWS_REGION): #
-        """Initialize the Bedrock client."""
+    def __init__(self, aws_region=BEDROCK_AWS_REGION): # BEDROCK_AWS_REGION is from your config.py
+        # --- BEGIN DEBUG ---
+        print(f"--- DEBUG: AIService __init__ ---")
+        print(f"--- DEBUG: Value of BEDROCK_AWS_REGION from config: {BEDROCK_AWS_REGION}")
+        print(f"--- DEBUG: Value of aws_region parameter passed to __init__: {aws_region}")
+        st.toast(f"AIService init: Using region '{aws_region}' from parameter.")
+        # --- END DEBUG ---
         try:
             self.client = boto3.client(
                 service_name='bedrock-runtime',
-                region_name=aws_region
+                region_name=aws_region # This is the critical part
             )
+            # --- BEGIN DEBUG ---
+            print(f"--- DEBUG: boto3.client created for region: {aws_region}")
+            st.toast(f"boto3 client using region: {aws_region}")
+            # --- END DEBUG ---
         except Exception as e:
+            # --- BEGIN DEBUG ---
+            print(f"--- DEBUG: Failed to initialize Bedrock client for region {aws_region}. Error: {e}")
+            st.toast(f"Bedrock client init FAILED for region {aws_region}. Error: {e}", icon="🔥")
+            # --- END DEBUG ---
             st.error(f"Failed to initialize Bedrock client: {e}. Ensure AWS credentials are configured and boto3 is installed.")
             self.client = None
-
+    
     def _separate_system_prompt(self, messages):
         """Separates the system prompt from the message list for Claude API."""
         system_prompt = ""
