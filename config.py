@@ -2,7 +2,7 @@
 import os
 
 # OpenAI API Configuration (can be kept for reference or other uses)
-# OPENAI_MODEL = "gpt-4o-2024-08-06"
+OPENAI_MODEL = "gpt-4o-2024-08-06"
 
 # Amazon Bedrock Configuration
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0" # Claude 3.5 Sonnet model ID
