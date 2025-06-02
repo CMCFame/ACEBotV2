@@ -5,7 +5,7 @@ import os
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 
 # Amazon Bedrock Configuration
-BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0" # Claude 3.5 Sonnet model ID
+BEDROCK_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0" # Claude 3.5 Sonnet model ID
 BEDROCK_AWS_REGION = "us-east-2" # Or your preferred AWS region for Bedrock
 
 DEFAULT_MAX_TOKENS = 1024 # Adjusted for Claude, can be tuned
