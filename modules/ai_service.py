@@ -265,38 +265,37 @@ class AIService:
 
     def get_example_response(self, last_question):
         """Get a consistently formatted example response using Claude."""
+        # Create a focused prompt that ONLY generates an example, not a full response
         system_message = f"""
-You are an AI assistant providing an example answer for a question about utility company callout processes.
-The current question is: "{last_question}"
+You are providing a brief example answer for a utility company callout process question.
 
-Your response should strictly follow this format:
-Example: [A specific, detailed example relevant to utility companies for the question above]
+The question is: "{last_question}"
 
-To continue with our question:
-{last_question}
+Provide ONLY a short, specific example answer (1-2 sentences max). Do not include any introduction, explanation, or restatement of the question. Just provide the example answer itself.
 
-Ensure the example is plain text, specific, relevant to a utility company, and demonstrates a good answer to the question.
-Do NOT use any HTML tags or special formatting other than what is shown.
+Example format: "We contact the on-call supervisor first because they coordinate crew assignments and assess the severity of the situation."
         """
+        
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": "Please provide an example answer formatted as requested."}
+            {"role": "user", "content": "Provide the example answer."}
         ]
 
-        example_response = self.get_response(messages, max_tokens=250, temperature=0.7)
-
-        if "Example:" not in example_response or "To continue with our question:" not in example_response:
-            example_text = "A detailed example for utility companies related to this question." 
-            question_text = last_question
-
-            if "Example:" in example_response:
-                parts = example_response.split("Example:", 1)
-                if len(parts) > 1:
-                    example_plus_rest = parts[1]
-                    if "To continue with our question:" in example_plus_rest:
-                        example_text = example_plus_rest.split("To continue with our question:")[0].strip()
-                    else:
-                        example_text = example_plus_rest.strip()
-            example_response = f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
-            
-        return example_response
+        example_response = self.get_response(messages, max_tokens=150, temperature=0.7)
+        
+        # Clean up the response - remove any formatting that might be included
+        example_text = example_response.strip()
+        
+        # Remove common prefixes that Claude might add
+        prefixes_to_remove = [
+            "Example:", "For example:", "Here's an example:", 
+            "An example would be:", "Example answer:", "A typical example:"
+        ]
+        
+        for prefix in prefixes_to_remove:
+            if example_text.lower().startswith(prefix.lower()):
+                example_text = example_text[len(prefix):].strip()
+                break
+        
+        # Return just the clean example text
+        return example_text
