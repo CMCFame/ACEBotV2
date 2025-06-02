@@ -5,7 +5,8 @@ import os
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 
 # Amazon Bedrock Configuration
-BEDROCK_MODEL_ID = "anthropic.claude-3-7-sonnet-20250219-v1:0"  # Corrected format
+# Using inference profile for Claude 3.7 Sonnet (required for this model)
+BEDROCK_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"  # Inference profile ID
 BEDROCK_AWS_REGION = "us-east-1"  # Changed to us-east-1 where Claude 3.7 is available
 
 DEFAULT_MAX_TOKENS = 1024 # Adjusted for Claude, can be tuned
@@ -21,9 +22,9 @@ COOKIE_KEYS = {
 }
 
 # File Paths
-PROMPT_FILE = "data/prompts/system_prompt.txt" #
-QUESTIONS_FILE = "data/questions.txt" #
-CSS_FILE = "assets/style.css" #
+PROMPT_FILE = "data/prompts/system_prompt.txt"
+QUESTIONS_FILE = "data/questions.txt"
+CSS_FILE = "assets/style.css"
 
 # Email Configuration
 EMAIL_CONFIG = {
@@ -47,7 +48,7 @@ TOPIC_AREAS = {
     "list_changes": "List Changes",
     "tiebreakers": "Tiebreakers",
     "additional_rules": "Additional Rules"
-} #
+}
 
 # Critical questions that must be asked for each topic
 CRITICAL_QUESTIONS = {
@@ -72,4 +73,4 @@ CRITICAL_QUESTIONS = {
     "additional_rules": [
         "are there rules that excuse declined callouts near shifts or vacations"
     ]
-} #
+}
