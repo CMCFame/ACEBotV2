@@ -5,9 +5,9 @@ import os
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 
 # Amazon Bedrock Configuration
-# Using inference profile for Claude 3.7 Sonnet (required for this model)
-BEDROCK_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"  # Inference profile ID
-BEDROCK_AWS_REGION = "us-east-1"  # Changed to us-east-1 where Claude 3.7 is available
+# Using Claude 3.5 Sonnet - NO inference profiles needed (much simpler)
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+BEDROCK_AWS_REGION = "us-east-1"
 
 DEFAULT_MAX_TOKENS = 1024 # Adjusted for Claude, can be tuned
 DEFAULT_TEMPERATURE = 0.7
