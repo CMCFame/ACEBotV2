@@ -145,41 +145,52 @@ class AIService:
             """
             return error_msg
 
-        system_prompt, claude_messages = self._separate_system_prompt(messages)
+        print(f"--- DEBUG: get_response called with {len(messages)} messages")
         
-        # Additional validation: ensure all messages have required fields
-        validated_messages = []
-        for i, msg in enumerate(claude_messages):
-            if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                # Only allow user and assistant roles
-                if msg["role"] in ["user", "assistant"]:
-                    # Ensure content is a string
-                    content = str(msg["content"]) if msg["content"] is not None else ""
-                    if content.strip():  # Only add non-empty messages
-                        validated_messages.append({
-                            "role": msg["role"],
-                            "content": content
-                        })
-                    else:
-                        print(f"--- DEBUG: Skipping empty message at index {i}")
-                else:
-                    print(f"--- DEBUG: Skipping message with invalid role '{msg['role']}' at index {i}")
-            else:
-                print(f"--- DEBUG: Skipping malformed message at index {i}: {msg}")
-
-        body = {
-            "anthropic_version": "bedrock-2023-05-31", 
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": validated_messages
-        }
-        if system_prompt and system_prompt.strip(): 
-            body["system"] = system_prompt.strip()
-        
-        print(f"--- DEBUG: Sending {len(validated_messages)} messages to Claude")
-
         try:
-            print(f"--- DEBUG: Calling Bedrock with model: {BEDROCK_MODEL_ID}")
+            system_prompt, claude_messages = self._separate_system_prompt(messages)
+            
+            # Additional validation: ensure all messages have required fields
+            validated_messages = []
+            for i, msg in enumerate(claude_messages):
+                print(f"--- DEBUG: Processing message {i}: role={msg.get('role')}, content_length={len(str(msg.get('content', '')))}")
+                
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    # Only allow user and assistant roles
+                    if msg["role"] in ["user", "assistant"]:
+                        # Ensure content is a string
+                        content = str(msg["content"]) if msg["content"] is not None else ""
+                        if content.strip():  # Only add non-empty messages
+                            validated_messages.append({
+                                "role": msg["role"],
+                                "content": content
+                            })
+                            print(f"--- DEBUG: Added message {i} to validated_messages")
+                        else:
+                            print(f"--- DEBUG: Skipping empty message at index {i}")
+                    else:
+                        print(f"--- DEBUG: Skipping message with invalid role '{msg['role']}' at index {i}")
+                else:
+                    print(f"--- DEBUG: Skipping malformed message at index {i}: {type(msg)}")
+
+            print(f"--- DEBUG: Final validated_messages count: {len(validated_messages)}")
+            
+            if len(validated_messages) == 0:
+                print("--- DEBUG: No valid messages found, returning error")
+                return "I'm having trouble processing the conversation. Please try rephrasing your message."
+
+            body = {
+                "anthropic_version": "bedrock-2023-05-31", 
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": validated_messages
+            }
+            if system_prompt and system_prompt.strip(): 
+                body["system"] = system_prompt.strip()
+                print(f"--- DEBUG: Added system prompt with {len(system_prompt)} characters")
+            
+            print(f"--- DEBUG: Sending request to Bedrock with {len(validated_messages)} messages")
+
             response = self.client.invoke_model(
                 modelId=BEDROCK_MODEL_ID,
                 contentType='application/json',
@@ -193,16 +204,19 @@ class AIService:
                 for block in response_body["content"]:
                     if block.get("type") == "text":
                         text_content += block.get("text", "")
-                print("--- DEBUG: Successfully got response from Claude")
+                print(f"--- DEBUG: Successfully got response from Claude: {len(text_content)} characters")
                 return text_content.strip()
             elif response_body.get("completion"): 
                  return response_body.get("completion").strip()
             else:
+                print(f"--- DEBUG: Unexpected response format: {response_body}")
                 st.error(f"Unexpected Bedrock response format: {response_body}")
                 return "Error: Could not parse response from Bedrock."
 
         except Exception as e: 
-            print(f"--- DEBUG: Bedrock API Error: {e}")
+            print(f"--- DEBUG: Exception in get_response: {e}")
+            import traceback
+            print(f"--- DEBUG: Full traceback: {traceback.format_exc()}")
             st.error(f"Bedrock API Error: {e}")
             return f"Error calling Bedrock API: {e}"
 
