@@ -1,9 +1,14 @@
 # config.py
 import os
 
-# OpenAI API Configuration
+# OpenAI API Configuration (can be kept for reference or other uses)
 OPENAI_MODEL = "gpt-4o-2024-08-06"
-DEFAULT_MAX_TOKENS = 150
+
+# Amazon Bedrock Configuration
+BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0" # Claude 3.5 Sonnet model ID
+BEDROCK_AWS_REGION = "us-east-1" # Or your preferred AWS region for Bedrock
+
+DEFAULT_MAX_TOKENS = 1024 # Adjusted for Claude, can be tuned
 DEFAULT_TEMPERATURE = 0.7
 
 # Cookie Management
@@ -16,9 +21,9 @@ COOKIE_KEYS = {
 }
 
 # File Paths
-PROMPT_FILE = "data/prompts/system_prompt.txt"
-QUESTIONS_FILE = "data/questions.txt"
-CSS_FILE = "assets/style.css"
+PROMPT_FILE = "data/prompts/system_prompt.txt" #
+QUESTIONS_FILE = "data/questions.txt" #
+CSS_FILE = "assets/style.css" #
 
 # Email Configuration
 EMAIL_CONFIG = {
@@ -39,10 +44,10 @@ TOPIC_AREAS = {
     "list_management": "List Management",
     "insufficient_staffing": "Insufficient Staffing",
     "calling_logistics": "Calling Logistics",
-    "list_changes": "List Changes", 
+    "list_changes": "List Changes",
     "tiebreakers": "Tiebreakers",
     "additional_rules": "Additional Rules"
-}
+} #
 
 # Critical questions that must be asked for each topic
 CRITICAL_QUESTIONS = {
@@ -67,4 +72,4 @@ CRITICAL_QUESTIONS = {
     "additional_rules": [
         "are there rules that excuse declined callouts near shifts or vacations"
     ]
-}
+} #
