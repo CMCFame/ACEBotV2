@@ -2,37 +2,56 @@
 import boto3
 import streamlit as st
 import json
-from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE #
-
-# modules/ai_service.py
-import boto3
-import streamlit as st # Make sure st is imported if not already for st.toast
-import json
+import os
 from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 class AIService:
-    def __init__(self, aws_region=BEDROCK_AWS_REGION): # BEDROCK_AWS_REGION is from your config.py
-        # --- BEGIN DEBUG ---
+    def __init__(self, aws_region=BEDROCK_AWS_REGION):
+        """Initialize the AI service with AWS Bedrock client."""
         print(f"--- DEBUG: AIService __init__ ---")
-        print(f"--- DEBUG: Value of BEDROCK_AWS_REGION from config: {BEDROCK_AWS_REGION}")
-        print(f"--- DEBUG: Value of aws_region parameter passed to __init__: {aws_region}")
-        st.toast(f"AIService init: Using region '{aws_region}' from parameter.")
-        # --- END DEBUG ---
+        print(f"--- DEBUG: Using region: {aws_region}")
+        print(f"--- DEBUG: Model ID: {BEDROCK_MODEL_ID}")
+        
         try:
-            self.client = boto3.client(
-                service_name='bedrock-runtime',
-                region_name=aws_region # This is the critical part
-            )
-            # --- BEGIN DEBUG ---
-            print(f"--- DEBUG: boto3.client created for region: {aws_region}")
-            st.toast(f"boto3 client using region: {aws_region}")
-            # --- END DEBUG ---
+            # Get AWS credentials from Streamlit secrets or environment
+            aws_access_key_id = None
+            aws_secret_access_key = None
+            
+            # First try Streamlit secrets (for Streamlit Cloud)
+            if hasattr(st, 'secrets') and 'aws' in st.secrets:
+                aws_access_key_id = st.secrets.aws.get("aws_access_key_id")
+                aws_secret_access_key = st.secrets.aws.get("aws_secret_access_key")
+                print("--- DEBUG: Using AWS credentials from Streamlit secrets")
+            
+            # Fallback to environment variables (for local development)
+            if not aws_access_key_id:
+                aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+                aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+                print("--- DEBUG: Using AWS credentials from environment variables")
+            
+            # Create the Bedrock client
+            if aws_access_key_id and aws_secret_access_key:
+                self.client = boto3.client(
+                    service_name='bedrock-runtime',
+                    region_name=aws_region,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key
+                )
+                print(f"--- DEBUG: Bedrock client created successfully for region: {aws_region}")
+                st.toast(f"✅ Connected to Claude 3.7 Sonnet in {aws_region}")
+            else:
+                # Try without explicit credentials (use default AWS credential chain)
+                self.client = boto3.client(
+                    service_name='bedrock-runtime',
+                    region_name=aws_region
+                )
+                print("--- DEBUG: Using default AWS credential chain")
+                st.toast(f"Using default AWS credentials for {aws_region}")
+                
         except Exception as e:
-            # --- BEGIN DEBUG ---
-            print(f"--- DEBUG: Failed to initialize Bedrock client for region {aws_region}. Error: {e}")
-            st.toast(f"Bedrock client init FAILED for region {aws_region}. Error: {e}", icon="🔥")
-            # --- END DEBUG ---
-            st.error(f"Failed to initialize Bedrock client: {e}. Ensure AWS credentials are configured and boto3 is installed.")
+            print(f"--- DEBUG: Failed to initialize Bedrock client. Error: {e}")
+            st.error(f"Failed to initialize Bedrock client: {e}")
+            st.error("Please check your AWS credentials in Streamlit Cloud secrets.")
             self.client = None
     
     def _separate_system_prompt(self, messages):
@@ -46,10 +65,10 @@ class AIService:
             chat_messages = messages
         return system_prompt, chat_messages
 
-    def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE): #
+    def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
         """Get a response from the Bedrock API using Claude."""
         if not self.client:
-            return "Error: Bedrock client not initialized"
+            return "Error: Bedrock client not initialized. Please check AWS credentials."
 
         system_prompt, claude_messages = self._separate_system_prompt(messages)
 
@@ -63,8 +82,9 @@ class AIService:
             body["system"] = system_prompt
 
         try:
+            print(f"--- DEBUG: Calling Bedrock with model: {BEDROCK_MODEL_ID}")
             response = self.client.invoke_model(
-                modelId=BEDROCK_MODEL_ID, #
+                modelId=BEDROCK_MODEL_ID,
                 contentType='application/json',
                 accept='application/json',
                 body=json.dumps(body)
@@ -84,10 +104,11 @@ class AIService:
                 return "Error: Could not parse response from Bedrock."
 
         except Exception as e: 
+            print(f"--- DEBUG: Bedrock API Error: {e}")
             st.error(f"Bedrock API Error: {e}")
             return f"Error: {e}"
 
-    def extract_user_info(self, user_input): #
+    def extract_user_info(self, user_input):
         """Extract user name and company name from the first response using Claude."""
         system_prompt = "You are an expert text analysis assistant. Your task is to extract the user's name and company name from their response to the question 'Could you please provide your name and your company name?'. Format your response strictly as 'NAME: [name], COMPANY: [company]'. If only one is found, use 'unknown' for the other. If neither is found, use 'unknown' for both."
 
@@ -119,7 +140,7 @@ class AIService:
             print(f"Error extracting user info with Claude: {e}. Response was: {extract_response}")
             return {"name": "", "company": ""}
 
-    def check_response_type(self, question, user_input): #
+    def check_response_type(self, question, user_input):
         """Determine if a user message is an answer or a question/request using Claude."""
         system_prompt = "You are an AI assistant that determines if a user's message is a direct answer to a given question or if it's a request for help/clarification. Respond with only 'ANSWER' or 'QUESTION'."
         messages = [
@@ -130,8 +151,8 @@ class AIService:
         response = self.get_response(messages, max_tokens=10, temperature=0.0)
         return "ANSWER" in response.upper()
 
-    def process_special_message_types(self, user_input): #
-        """Process special message types like example requests. This logic remains largely the same."""
+    def process_special_message_types(self, user_input):
+        """Process special message types like example requests."""
         lower_input = user_input.lower().strip()
 
         if lower_input in ["example", "show example", "give me an example", "example answer", "can you show me an example?"]:
@@ -144,7 +165,7 @@ class AIService:
             return {"type": "frustration", "subtype": "summary_request"}
         return {"type": "regular_input"}
 
-    def get_example_response(self, last_question): #
+    def get_example_response(self, last_question):
         """Get a consistently formatted example response using Claude."""
         system_message = f"""
 You are an AI assistant providing an example answer for a question about utility company callout processes.
@@ -176,7 +197,6 @@ Do NOT use any HTML tags or special formatting other than what is shown.
                     example_plus_rest = parts[1]
                     if "To continue with our question:" in example_plus_rest:
                         example_text = example_plus_rest.split("To continue with our question:")[0].strip()
-                        # question_text is already last_question
                     else:
                         example_text = example_plus_rest.strip()
             example_response = f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
