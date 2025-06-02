@@ -1,4 +1,4 @@
-v# modules/ai_service.py
+# modules/ai_service.py
 import boto3
 import streamlit as st
 import json
