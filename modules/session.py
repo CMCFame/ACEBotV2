@@ -144,14 +144,11 @@ class SessionManager:
             dict: Result of the operation
         """
         try:
-            # Set a flag to prevent infinite reruns
             if st.session_state.get("restoring_session", False):
                 return {"success": False, "message": "Already restoring a session."}
             
-            # Mark that we're restoring a session
             st.session_state.restoring_session = True
             
-            # Get session data from source
             session_data = None
             if source == "server" and session_id:
                 server_result = self.server_storage.load_session(session_id)
@@ -164,123 +161,87 @@ class SessionManager:
                 st.session_state.restoring_session = False
                 return {"success": False, "message": f"No saved session found in {source}."}
             
-            # Check session format version
-            if "version" not in session_data:
-                # Handle legacy format
-                print("Legacy session format detected, attempting conversion")
+            # Basic session state restoration
+            st.session_state.user_info = session_data.get("user_info", {"name": "", "company": ""})
+            st.session_state.responses = session_data.get("responses", [])
+            st.session_state.current_question_index = session_data.get("current_question_index", 0)
+
+            if 'questions' not in st.session_state:
+                from utils.helpers import load_questions
+                st.session_state.questions = load_questions('data/questions.txt')
             
-            # Restore session state
-            if "user_info" in session_data:
-                st.session_state.user_info = session_data["user_info"]
-            
-            if "responses" in session_data:
-                st.session_state.responses = session_data["responses"]
-            
-            if "current_question_index" in session_data:
-                st.session_state.current_question_index = session_data["current_question_index"]
-                # Make sure questions are loaded
-                if "questions" not in st.session_state:
-                    from utils.helpers import load_questions
-                    st.session_state.questions = load_questions('data/questions.txt')
-                
-                # Set current question based on index
-                if st.session_state.current_question_index < len(st.session_state.questions):
-                    st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
-                else:
-                    # Handle edge case where index is out of bounds
-                    st.session_state.current_question_index = 0
-                    st.session_state.current_question = st.session_state.questions[0]
-            
-            # Restore chat history - this is critical for AI context
-            if "chat_history" in session_data and len(session_data["chat_history"]) > 0:
-                # Make sure instructions are loaded
-                if "instructions" not in st.session_state:
-                    from utils.helpers import load_instructions
-                    st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
-                
-                # Check if system prompt is first message, if not add it
-                if session_data["chat_history"][0].get("role") != "system":
-                    session_data["chat_history"].insert(0, {"role": "system", "content": st.session_state.instructions})
-                
-                # Create a much more detailed context restoration message
-                current_q_index = session_data.get('current_question_index', 0)
-                current_q = st.session_state.questions[min(current_q_index, len(st.session_state.questions)-1)]
-                
-                # Enhanced context restoration to help the AI understand exactly where we left off
-                restoration_context = {
-                    "role": "system",
-                    "content": f"""
-                    CRITICAL CONTEXT RESTORATION:
-                    
-                    1. This conversation is being resumed from a previous session.
-                    2. User name: {session_data['user_info'].get('name', 'unknown')}
-                    3. Company: {session_data['user_info'].get('company', 'unknown company')}
-                    4. Current question index: {current_q_index}
-                    5. Current question: {current_q}
-                    6. Last active timestamp: {session_data.get('saved_timestamp', 'unknown')}
-                    
-                    Topics already covered in detail:
-                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if v])}
-                    
-                    Topics still needed:
-                    {', '.join([TOPIC_AREAS[t] for t, v in session_data.get('topic_areas_covered', {}).items() if not v])}
-                    
-                    YOU MUST:
-                    - Continue the conversation naturally from where it left off
-                    - DO NOT repeat questions that have already been asked
-                    - FOCUS on gathering information about missing topics
-                    - Acknowledge that the conversation is being resumed
-                    - Maintain a friendly, conversational tone
-                    - If the user seems confused, briefly remind them where you were in the conversation
-                    - If you want to summarize what you've learned so far to help reestablish context, do so BRIEFLY (1-2 sentences max)
-                    - Respect any previous statements about skipping certain questions or topics
-                    """
-                }
-                
-                # Add restoration context
-                session_data["chat_history"].append(restoration_context)
-                
-                # Set the chat history
-                st.session_state.chat_history = session_data["chat_history"]
+            if st.session_state.current_question_index < len(st.session_state.questions):
+                st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
             else:
-                # If no chat history, initialize with system prompt
-                if "instructions" not in st.session_state:
-                    from utils.helpers import load_instructions
-                    st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
-                
-                st.session_state.chat_history = [{"role": "system", "content": st.session_state.instructions}]
+                st.session_state.current_question_index = 0
+                st.session_state.current_question = st.session_state.questions[0]
+
+            if 'instructions' not in st.session_state:
+                from utils.helpers import load_instructions
+                st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
+
+            # Restore chat history
+            st.session_state.chat_history = session_data.get("chat_history", [{"role": "system", "content": st.session_state.instructions}])
+            if not st.session_state.chat_history or st.session_state.chat_history[0].get("role") != "system":
+                st.session_state.chat_history.insert(0, {"role": "system", "content": st.session_state.instructions})
+
+            # *** MODIFIED SECTION FOR RESTORATION CONTEXT START ***
+            current_q_index = st.session_state.current_question_index
+            current_q = st.session_state.current_question
+            topics_covered_state = session_data.get('topic_areas_covered', {})
+            topics_covered_str = ', '.join([TOPIC_AREAS.get(t, t) for t, v in topics_covered_state.items() if v]) or "None yet"
+            topics_needed_str = ', '.join([TOPIC_AREAS.get(t,t) for t, v in topics_covered_state.items() if not v]) or "All seem covered, but please verify."
+
+            restoration_context_content = (
+                "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
+                "CRITICAL CONTEXT RESTORATION:\n"
+                "1. This conversation is being resumed from a previous session.\n"
+                f"2. User name: {st.session_state.user_info.get('name', 'unknown')}\n"
+                f"3. Company: {st.session_state.user_info.get('company', 'unknown company')}\n"
+                f"4. Current question index: {current_q_index}\n"
+                f"5. The last question asked or being discussed was related to: {current_q}\n"
+                f"6. Last active timestamp: {session_data.get('saved_timestamp', 'unknown')}\n"
+                f"7. Topics already covered in detail: {topics_covered_str}\n"
+                f"8. Topics still needing focus: {topics_needed_str}\n\n"
+                "YOUR TASK NOW:\n"
+                "- Acknowledge that the conversation is being resumed.\n"
+                "- Briefly (1 sentence) remind the user of the last question or topic we were on.\n"
+                "- Then, ask the next logical question based on the current_question_index and topics_needed_str, or if all topics seem covered, confirm with the user.\n"
+                "- Continue the conversation naturally. DO NOT repeat questions already clearly answered.\n"
+                "- Maintain a friendly, conversational tone.\n"
+                "[END_SYSTEM_INSTRUCTION]"
+            )
+            # Add this instruction to the chat_history so the AI generates the welcome back message
+            st.session_state.chat_history.append({
+                 "role": "user", # Changed from "system"
+                 "content": restoration_context_content
+            })
+            # *** MODIFIED SECTION FOR RESTORATION CONTEXT END ***
             
-            # Restore visible messages for UI
-            if "visible_messages" in session_data:
-                st.session_state.visible_messages = session_data["visible_messages"]
+            st.session_state.visible_messages = session_data.get("visible_messages", [])
             
             # Restore topic tracking
-            if "topic_areas_covered" in session_data:
-                # Initialize with defaults first
-                st.session_state.topic_areas_covered = {topic: False for topic in TOPIC_AREAS.keys()}
-                # Then update with saved values
-                for topic, covered in session_data["topic_areas_covered"].items():
-                    if topic in st.session_state.topic_areas_covered:
-                        st.session_state.topic_areas_covered[topic] = covered
+            st.session_state.topic_areas_covered = {topic: False for topic in TOPIC_AREAS.keys()}
+            saved_topics = session_data.get("topic_areas_covered", {})
+            for topic, covered in saved_topics.items():
+                if topic in st.session_state.topic_areas_covered:
+                    st.session_state.topic_areas_covered[topic] = covered
             
-            # Restore summary state if applicable
-            if "summary_requested" in session_data:
-                st.session_state.summary_requested = session_data["summary_requested"]
+            st.session_state.summary_requested = session_data.get("summary_requested", False)
+            st.session_state.explicitly_finished = session_data.get("explicitly_finished", False)
             
-            if "explicitly_finished" in session_data:
-                st.session_state.explicitly_finished = session_data["explicitly_finished"]
+            # The AI will generate the "Welcome back" message based on the restoration_context_content.
+            # The app.py's main loop will call get_response with the updated chat_history.
+            # We don't add a hardcoded welcome message to visible_messages here anymore.
+            # The AI's response to the restoration_context_content will be added to visible_messages by the main app loop.
+
+            st.session_state.restoring_session = False 
             
-            # Add a visible message informing the user that the session was restored
-            st.session_state.visible_messages.append({
-                "role": "assistant", 
-                "content": f"👋 Welcome back! I've restored your previous session. We were discussing {current_q}. Let's continue from where we left off."
-            })
-            
-            # Mark restoration as complete
-            st.session_state.restoring_session = False
-            
-            return {"success": True, "message": f"Session restored from {source} successfully."}
+            return {"success": True, "message": f"Session restored from {source}. The assistant will now welcome you back."}
             
         except Exception as e:
             st.session_state.restoring_session = False
+            # Print detailed error for debugging
+            import traceback
+            print(f"Error restoring session: {str(e)}\n{traceback.format_exc()}")
             return {"success": False, "message": f"Error restoring session: {str(e)}"}

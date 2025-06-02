@@ -287,8 +287,9 @@ def main():
                 content = message["content"]
                 
                 # HELP BOX
-                if "I need help with this question" in content:
+                if "I need help with this question" in content: # This check might need to be more robust if AI phrases it differently
                     help_text = content.replace("I need help with this question", "").strip()
+                    # A better check might be if the content *is* the st.session_state.pending_help if that's set
                     st.markdown(
                         f"""
                         <div style="display: flex; margin-bottom: 15px;">
@@ -333,7 +334,7 @@ def main():
                         unsafe_allow_html=True
                     )
         
-        # Display any pending help message
+        # Display any pending help message (This section is now slightly redundant if help message is in visible_messages, but kept for safety)
         if st.session_state.pending_help:
             help_text = st.session_state.pending_help
             
@@ -352,11 +353,12 @@ def main():
                 unsafe_allow_html=True
             )
             
-            # Add to visible messages
-            st.session_state.visible_messages.append({
-                "role": "assistant",
-                "content": help_text
-            })
+            # Add to visible messages if not already there (idempotency)
+            if not any(msg["role"] == "assistant" and msg["content"] == help_text for msg in st.session_state.visible_messages):
+                st.session_state.visible_messages.append({
+                    "role": "assistant",
+                    "content": help_text
+                })
             
             # Clear the pending help
             st.session_state.pending_help = None
@@ -367,30 +369,15 @@ def main():
             question_text = st.session_state.pending_example["question_text"]
             
             # Render the example
-            st.markdown(
-                f"""
-                <div style="display: flex; margin-bottom: 15px;">
-                  <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
-                    <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
-                    <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
-                      <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
-                      <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
-                    </div>
-                    <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
-                      <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
-                      <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
-                    </div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            st.markdown(create_example_html(example_text, question_text), unsafe_allow_html=True)
             
-            # Save this to visible messages for history
-            st.session_state.visible_messages.append({
-                "role": "assistant", 
-                "content": f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
-            })
+            # Save this to visible messages for history if not already there
+            full_example_content = f"Example: {example_text}\n\nTo continue with our question:\n{question_text}"
+            if not any(msg["role"] == "assistant" and msg["content"] == full_example_content for msg in st.session_state.visible_messages):
+                st.session_state.visible_messages.append({
+                    "role": "assistant", 
+                    "content": full_example_content
+                })
             
             # Clear the pending example so it doesn't show again
             st.session_state.pending_example = None
@@ -427,307 +414,199 @@ def main():
                     st.success("Completion notification sent!")
                     st.session_state.completion_email_sent = True
         else:
-            # Add help/example buttons if not in summary mode - REPLACED with callback versions
-            # help_button, example_button = services["chat_ui"].add_help_example_buttons()
-            
-            # Button callbacks
+            # Add help/example buttons
             def on_help_click():
                 st.session_state.help_button_clicked = True
                 
             def on_example_click():
                 st.session_state.example_button_clicked = True
             
-            # Create buttons with callbacks
             buttons_col1, buttons_col2 = st.columns(2)
             with buttons_col1:
                 st.button("Need help?", key="help_button", on_click=on_help_click)
             with buttons_col2:
                 st.button("Example", key="example_button", on_click=on_example_click)
             
-            # Process help button click - UPDATED to use session state
             if st.session_state.help_button_clicked:
-                # Get the current question context
                 last_question = None
                 for msg in reversed(st.session_state.visible_messages):
                     if msg["role"] == "assistant" and "?" in msg["content"]:
-                        last_question = msg["content"]
+                        last_question = msg["content"].split("To continue with our question:")[-1].strip() if "To continue with our question:" in msg["content"] else msg["content"]
                         break
                 
-                # Create help message context
-                help_messages = st.session_state.chat_history.copy()
-                help_messages.append({
-                    "role": "system", 
-                    "content": f"The user is asking for help with the CURRENT question which is: '{last_question}'. Provide a helpful explanation specifically for THIS question, not a previous one."
+                help_messages_for_ai = st.session_state.chat_history.copy()
+                # *** MODIFIED SECTION FOR HELP MESSAGES (on_click) START ***
+                help_messages_for_ai.append({
+                    "role": "user", # Changed from "system"
+                    "content": (
+                        "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
+                        f"The user is asking for help with the CURRENT question which is: '{last_question}'.\n"
+                        "Provide a helpful explanation specifically for THIS question, not a previous one. "
+                        "Address the user directly and explain what kind of information is being sought by the question.\n"
+                        "[END_SYSTEM_INSTRUCTION]"
+                    )
                 })
-                help_messages.append({"role": "user", "content": "I need help with this question"})
+                # *** MODIFIED SECTION FOR HELP MESSAGES (on_click) END ***
+                help_messages_for_ai.append({"role": "user", "content": "I need help with this question"})
                 
-                # Get AI response
-                help_response = services["ai_service"].get_response(help_messages)
+                help_response_content = services["ai_service"].get_response(help_messages_for_ai)
                 
-                # Add help interaction to chat history
                 st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
-                st.session_state.chat_history.append({"role": "assistant", "content": help_response})
-                
-                # Add user message to visible messages
+                st.session_state.chat_history.append({"role": "assistant", "content": help_response_content})
                 st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
-                
-                # Save the help response to session state
-                st.session_state.pending_help = help_response
-                
-                # Reset the button state
+                st.session_state.pending_help = help_response_content # To display it immediately
                 st.session_state.help_button_clicked = False
-                
-                # Force a rerun
                 st.rerun()
             
-            # Process example button click - UPDATED to use session state
             if st.session_state.example_button_clicked:
-                # Extract the last question from the assistant
                 last_question = None
                 for msg in reversed(st.session_state.visible_messages):
                     if msg["role"] == "assistant" and "?" in msg["content"]:
-                        sentences = msg["content"].split(". ")
-                        for sentence in reversed(sentences):
-                            if "?" in sentence:
-                                last_question = sentence.strip()
-                                break
-                        if last_question:
-                            break
-                
-                if not last_question:
-                    # Fallback to the last assistant message
-                    for msg in reversed(st.session_state.visible_messages):
-                        if msg["role"] == "assistant":
-                            last_question = msg["content"]
-                            break
+                        # Try to get the actual question part, excluding example prefix if any
+                        content_parts = msg["content"].split("To continue with our question:")
+                        if len(content_parts) > 1:
+                            last_question = content_parts[-1].strip()
+                        else:
+                            last_question = msg["content"].strip()
+                        break
                 
                 if last_question:
-                    # Get a simple example without any formatting
-                    example_messages = [
-                        {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
-                        {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
-                    ]
+                    example_text_content = services["ai_service"].get_example_response(last_question) # This now returns only the example text
                     
-                    example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
-                    
-                    # Add to chat history
                     st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
-                    
-                    # Store the response in chat history in a format that's useful for continuation
-                    st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
-                    
-                    # Add user message to visible messages
+                    full_example_for_history = f"Example: {example_text_content}\n\nTo continue with our question:\n{last_question}"
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_example_for_history})
                     st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
-                    
-                    # Save the example in session state for rendering
                     st.session_state.pending_example = {
-                        "example_text": example_text,
+                        "example_text": example_text_content,
                         "question_text": last_question
                     }
-                    
-                    # Reset the button state
                     st.session_state.example_button_clicked = False
-                    
-                    # Force a rerun
                     st.rerun()
                 else:
                     st.error("Could not find a question to provide an example for.")
                     st.session_state.example_button_clicked = False
-                    st.rerun()
             
-            # Add input form
             user_input = services["chat_ui"].add_input_form()
             
-            # Process user input
             if user_input:
-                # Check if input is empty or just whitespace
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
                 else:
-                    # Process special message types
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
                     if message_type["type"] == "example_request":
-                        # Extract the last question from the assistant
-                        last_question = None
-                        for msg in reversed(st.session_state.visible_messages):
-                            if msg["role"] == "assistant" and "?" in msg["content"]:
-                                sentences = msg["content"].split(". ")
-                                for sentence in reversed(sentences):
-                                    if "?" in sentence:
-                                        last_question = sentence.strip()
-                                        break
-                                if last_question:
-                                    break
-                        
-                        if not last_question:
-                            # Fallback to the last assistant message
-                            for msg in reversed(st.session_state.visible_messages):
-                                if msg["role"] == "assistant":
-                                    last_question = msg["content"]
-                                    break
-                        
-                        if last_question:
-                            # Get a simple example without any formatting
-                            example_messages = [
-                                {"role": "system", "content": "You are providing a short, clear example answer for utility company callout processes. ONLY provide the example text with no additional explanation, introduction, or summary. Keep it under 75 words."},
-                                {"role": "user", "content": f"Give me one brief example answer for: {last_question}"}
-                            ]
-                            
-                            example_text = services["ai_service"].get_response(example_messages, max_tokens=100)
-                            
-                            # Add to chat history
-                            st.session_state.chat_history.append({"role": "user", "content": user_input})
-                            
-                            # Store the response in chat history
-                            st.session_state.chat_history.append({"role": "assistant", "content": f"Example: {example_text}\n\nTo continue with our question:\n{last_question}"})
-                            
-                            # Add user message to visible messages
-                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
-                            
-                            # Save the example in session state for rendering
-                            st.session_state.pending_example = {
-                                "example_text": example_text,
-                                "question_text": last_question
-                            }
-                            
-                            # Force a rerun to show the user message immediately
-                            st.rerun()
-                        else:
-                            st.error("Could not find a question to provide an example for.")
-                            st.rerun()
+                        # This logic is now largely handled by the example_button_clicked
+                        # but can be kept as a fallback if user types "example"
+                        st.session_state.example_button_clicked = True # Trigger the button logic
+                        st.rerun()
                         
                     elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
-                        # Handle summary request
-                        force_summary = message_type["type"] == "frustration" or st.session_state.get("previous_summary_request", False)
-                        
-                        # Track that user has requested summary before
-                        st.session_state["previous_summary_request"] = True
-                        
-                        # Add user message to chat history
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        # Force summary if user is showing frustration
+                        force_summary = message_type["type"] == "frustration" or st.session_state.get("previous_summary_request", False)
+                        st.session_state["previous_summary_request"] = True
+                        
                         if force_summary:
                             st.session_state.summary_requested = True
-                            
-                            # Force all topics to be marked as covered
-                            for topic in st.session_state.topic_areas_covered:
-                                st.session_state.topic_areas_covered[topic] = True
-                                
-                            # Add a response from assistant
+                            for topic in st.session_state.topic_areas_covered: st.session_state.topic_areas_covered[topic] = True
                             summary_confirm = "I'll prepare a summary of your responses. You can download it below."
                             st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
                             st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                         else:
-                            # Check if ready for summary
                             summary_readiness = services["topic_tracker"].check_summary_readiness()
-                            
                             if summary_readiness["ready"]:
                                 st.session_state.summary_requested = True
                                 summary_confirm = "I'll prepare a summary of your responses. You can download it below."
                                 st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                             else:
-                                # Not ready - inform about missing topics/questions
-                                st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
-                                st.session_state.visible
                                 st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": summary_readiness["message"]})
-                        
                         st.rerun()
                         
-                    else:
-                        # Regular input - add to chat history
+                    else: # Regular input
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        # Get AI response
-                        ai_response = services["ai_service"].get_response(st.session_state.chat_history)
+                        ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
                         
-                        # Process special message formats from the AI
-                        is_topic_update = services["topic_tracker"].process_topic_update(ai_response)
+                        is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content) # AI might send this spontaneously
                         
                         if not is_topic_update:
-                            # Add the response to visible messages
-                            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": ai_response})
+                            st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
                             
                             # Force a topic update message after each regular response
-                            topic_check_messages = st.session_state.chat_history.copy()
-                            topic_check_messages.append({
-                                "role": "system", 
-                                "content": "Based on all conversation so far, which topics have been covered? Respond ONLY with a TOPIC_UPDATE message that includes the status of ALL topic areas."
+                            topic_check_messages_for_ai = st.session_state.chat_history.copy()
+                            # *** MODIFIED SECTION FOR TOPIC CHECK MESSAGES (user_input) START ***
+                            topic_check_messages_for_ai.append({
+                                "role": "user", # Changed from "system"
+                                "content": (
+                                    "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
+                                    "Based on all conversation so far, which topics have been covered from the list: "
+                                    "basic_info, staffing_details, contact_process, list_management, insufficient_staffing, "
+                                    "calling_logistics, list_changes, tiebreakers, additional_rules.\n"
+                                    "Respond ONLY with a TOPIC_UPDATE message in the exact JSON format that includes the status (true or false) of ALL topic areas. For example:\n"
+                                    "TOPIC_UPDATE: {\"basic_info\": true, \"staffing_details\": false, \"contact_process\": true, "
+                                    "\"list_management\": false, \"insufficient_staffing\": false, \"calling_logistics\": false, "
+                                    "\"list_changes\": false, \"tiebreakers\": false, \"additional_rules\": false}\n"
+                                    "[END_SYSTEM_INSTRUCTION]"
+                                )
                             })
+                            # *** MODIFIED SECTION FOR TOPIC CHECK MESSAGES (user_input) END ***
                             
-                            topic_update_response = services["ai_service"].get_response(topic_check_messages)
-                            services["topic_tracker"].process_topic_update(topic_update_response)
+                            topic_update_response_content = services["ai_service"].get_response(topic_check_messages_for_ai)
+                            # This response itself might be the topic update, or it might be other text.
+                            # process_topic_update should handle this.
+                            services["topic_tracker"].process_topic_update(topic_update_response_content)
                         
-                        # For the first question, extract user and company name
                         if st.session_state.current_question_index == 0:
-                            user_info = services["ai_service"].extract_user_info(user_input)
-                            
-                            # Only update if we found something useful
-                            if user_info["name"] or user_info["company"]:
-                                st.session_state.user_info = user_info
-                                
-                                # Add this information to the AI context
-                                context_message = {
-                                    "role": "system", 
-                                    "content": f"The user's name is {user_info['name'] or 'not provided yet'} and they work for {user_info['company'] or 'a company that has not been mentioned yet'}. If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided."
-                                }
-                                st.session_state.chat_history.append(context_message)
-                        
-                        # Check if this is an answer to the current question
+                            user_info_data = services["ai_service"].extract_user_info(user_input)
+                            if user_info_data["name"] or user_info_data["company"]:
+                                st.session_state.user_info = user_info_data
+                                context_message_content = (
+                                    "[SYSTEM_CONTEXT_UPDATE]:\n"
+                                    f"The user's name is {user_info_data['name'] or 'not provided yet'} and "
+                                    f"they work for {user_info_data['company'] or 'a company that has not been mentioned yet'}. "
+                                    "If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided.\n"
+                                    "[END_SYSTEM_CONTEXT_UPDATE]"
+                                )
+                                # Add as a user message so it's seen by AI if not filtered by _separate_system_prompt
+                                st.session_state.chat_history.append({"role": "user", "content": context_message_content})
+
                         if st.session_state.current_question_index < len(st.session_state.questions):
-                            is_answer = services["ai_service"].check_response_type(
-                                st.session_state.current_question, 
-                                user_input
-                            )
-                            
+                            is_answer = services["ai_service"].check_response_type(st.session_state.current_question, user_input)
                             if is_answer:
-                                # Store answer and advance to next question
                                 st.session_state.responses.append((st.session_state.current_question, user_input))
                                 st.session_state.current_question_index += 1
                                 if st.session_state.current_question_index < len(st.session_state.questions):
                                     st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
                         
-                        # Update AI context to prevent circular questioning
                         services["topic_tracker"].update_ai_context_after_answer(user_input)
-                        
                         st.rerun()
 
     with tab2:
-        # Instructions Tab Content
         st.markdown("## How to Use the ACE Questionnaire")
-        
         st.markdown("""
         ### Welcome to the ACE Questionnaire!
-        
         This tool is designed to gather detailed information about your utility company's callout processes for ARCOS implementation. Follow these simple instructions to complete the questionnaire:
-        
         #### Getting Started
         1. Enter your name and company name when prompted
         2. Answer each question to the best of your ability
         3. If you need to take a break, use the "Save Progress" button in the sidebar
-        
         #### Special Features
-        
         * **Need Help?** - Click the "Need help?" button below any question to get a detailed explanation
         * **Examples** - Click the "Example" button to see sample responses for the current question
         * **Save Progress** - Save your work at any time using the sidebar option
         * **Resume Later** - Use your session ID or upload your saved file to continue where you left off
-        
         #### Navigation Tips
-        
         * Answer one question at a time
         * The progress bar shows how many topic areas you've completed
         * All 9 topic areas must be covered to complete the questionnaire
         * When complete, you'll receive a summary you can download
-        
         #### Topic Areas Covered
-        
         1. Basic Information - User, company, callout types
         2. Staffing Details - Employee requirements and roles
         3. Contact Process - First contact and methods
@@ -737,78 +616,34 @@ def main():
         7. List Changes - Updates to ordering and content
         8. Tiebreakers - Methods when ordering is equal
         9. Additional Rules - Scheduling and exceptions
-        
         If you have any questions about the questionnaire, please check the FAQ tab or contact your ARCOS implementation consultant.
         """)
     
     with tab3:
-        # FAQ Tab Content
         st.markdown("## Frequently Asked Questions")
-        
-        # Using expanders for each FAQ item
         with st.expander("What is the ACE Questionnaire?"):
-            st.write("""
-            The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information 
-            about your utility company's callout processes. This information helps ARCOS solution consultants 
-            understand your specific requirements and configure the ARCOS system to match your existing workflows.
-            """)
-            
+            st.write("The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes. This information helps ARCOS solution consultants understand your specific requirements and configure the ARCOS system to match your existing workflows.")
         with st.expander("How long does it take to complete?"):
-            st.write("""
-            The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your 
-            callout processes. You can save your progress at any time and return to complete it later.
-            """)
-            
+            st.write("The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your callout processes. You can save your progress at any time and return to complete it later.")
         with st.expander("Can I save my progress and continue later?"):
-            st.write("""
-            Yes! Use the "Save Progress" button in the sidebar to save your current progress. You'll receive a 
-            Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also
-            download a backup file if needed.
-            """)
-            
+            st.write("Yes! Use the \"Save Progress\" button in the sidebar to save your current progress. You'll receive a Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also download a backup file if needed.")
         with st.expander("What if I don't know the answer to a question?"):
-            st.write("""
-            If you're unsure about any question, click the "Need help?" button for a detailed explanation. 
-            If you still don't know, provide your best understanding and make a note that this area may need 
-            further discussion with your implementation consultant.
-            """)
-            
+            st.write("If you're unsure about any question, click the \"Need help?\" button for a detailed explanation. If you still don't know, provide your best understanding and make a note that this area may need further discussion with your implementation consultant.")
         with st.expander("Will my answers be saved automatically?"):
-            st.write("""
-            No, your answers are not saved automatically. Be sure to use the "Save Progress" button in the sidebar 
-            to save your work before closing the application.
-            """)
-            
+            st.write("No, your answers are not saved automatically. Be sure to use the \"Save Progress\" button in the sidebar to save your work before closing the application.")
         with st.expander("Who will see my responses?"):
-            st.write("""
-            Your responses will be shared with the ARCOS implementation team assigned to your project. 
-            The information is used solely for configuring your ARCOS system to match your requirements.
-            """)
-            
+            st.write("Your responses will be shared with the ARCOS implementation team assigned to your project. The information is used solely for configuring your ARCOS system to match your requirements.")
         with st.expander("What happens after I complete the questionnaire?"):
-            st.write("""
-            After completion, you'll receive a summary of your responses that you can download. 
-            A notification will also be sent to your ARCOS implementation consultant, who will review 
-            your responses and schedule a follow-up discussion to clarify any points as needed.
-            """)
-        
+            st.write("After completion, you'll receive a summary of your responses that you can download. A notification will also be sent to your ARCOS implementation consultant, who will review your responses and schedule a follow-up discussion to clarify any points as needed.")
         with st.expander("How do I resume a saved session?"):
             st.write("""
             To resume a saved session, you have two options:
-            
-            1. **Using Session ID**: Enter your Session ID in the sidebar and click "Load from Server". 
-               This is the recommended method if you saved your session ID when prompted.
-               
-            2. **Using a File**: If you downloaded a progress file, you can upload it in the sidebar
-               under "Upload Progress File" and then click "Load from File".
-            
-            The system will restore your conversation exactly where you left off, and the AI will remember
-            the context of your previous discussion.
+            1. **Using Session ID**: Enter your Session ID in the sidebar and click "Load from Server". This is the recommended method if you saved your session ID when prompted.
+            2. **Using a File**: If you downloaded a progress file, you can upload it in the sidebar under "Upload Progress File" and then click "Load from File".
+            The system will restore your conversation exactly where you left off, and the AI will remember the context of your previous discussion.
             """)
 
-# Add sidebar UI
 add_sidebar_ui()
 
-# Run the main application
 if __name__ == "__main__":
     main()
