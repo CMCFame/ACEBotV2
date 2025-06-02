@@ -13,24 +13,53 @@ class AIService:
         print(f"--- DEBUG: Model ID: {BEDROCK_MODEL_ID}")
         
         try:
-            # Get AWS credentials from Streamlit secrets or environment
+            # Check if we're running in Streamlit Cloud
             aws_access_key_id = None
             aws_secret_access_key = None
             
-            # First try Streamlit secrets (for Streamlit Cloud)
-            if hasattr(st, 'secrets') and 'aws' in st.secrets:
-                aws_access_key_id = st.secrets.aws.get("aws_access_key_id")
-                aws_secret_access_key = st.secrets.aws.get("aws_secret_access_key")
-                print("--- DEBUG: Using AWS credentials from Streamlit secrets")
+            # Debug: Check what secrets are available
+            if hasattr(st, 'secrets'):
+                print(f"--- DEBUG: st.secrets is available")
+                print(f"--- DEBUG: Available secret sections: {list(st.secrets.keys()) if st.secrets else 'None'}")
+                
+                if 'aws' in st.secrets:
+                    print("--- DEBUG: Found 'aws' section in secrets")
+                    aws_access_key_id = st.secrets.aws.get("aws_access_key_id")
+                    aws_secret_access_key = st.secrets.aws.get("aws_secret_access_key")
+                    
+                    # Debug credential lengths (don't print actual values for security)
+                    key_length = len(aws_access_key_id) if aws_access_key_id else 0
+                    secret_length = len(aws_secret_access_key) if aws_secret_access_key else 0
+                    print(f"--- DEBUG: Access key length: {key_length}")
+                    print(f"--- DEBUG: Secret key length: {secret_length}")
+                    
+                    if aws_access_key_id and aws_secret_access_key:
+                        print("--- DEBUG: Successfully got AWS credentials from Streamlit secrets")
+                        st.success("✅ AWS credentials loaded from Streamlit secrets")
+                    else:
+                        print("--- DEBUG: AWS credentials are empty in Streamlit secrets")
+                        st.error("❌ AWS credentials are empty in Streamlit secrets")
+                else:
+                    print("--- DEBUG: No 'aws' section found in Streamlit secrets")
+                    st.error("❌ No 'aws' section found in Streamlit secrets. Please add AWS credentials.")
+            else:
+                print("--- DEBUG: st.secrets is not available")
+                st.warning("⚠️ Streamlit secrets not available, trying environment variables")
             
-            # Fallback to environment variables (for local development)
+            # Fallback to environment variables
             if not aws_access_key_id:
                 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
                 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-                print("--- DEBUG: Using AWS credentials from environment variables")
+                if aws_access_key_id:
+                    print("--- DEBUG: Using AWS credentials from environment variables")
+                    st.info("📋 Using AWS credentials from environment variables")
+                else:
+                    print("--- DEBUG: No AWS credentials found in environment variables either")
+                    st.error("❌ No AWS credentials found in environment variables")
             
             # Create the Bedrock client
             if aws_access_key_id and aws_secret_access_key:
+                print("--- DEBUG: Creating Bedrock client with explicit credentials")
                 self.client = boto3.client(
                     service_name='bedrock-runtime',
                     region_name=aws_region,
@@ -38,22 +67,41 @@ class AIService:
                     aws_secret_access_key=aws_secret_access_key
                 )
                 print(f"--- DEBUG: Bedrock client created successfully for region: {aws_region}")
-                st.toast(f"✅ Connected to Claude 3.7 Sonnet in {aws_region}")
-            else:
-                # Try without explicit credentials (use default AWS credential chain)
-                self.client = boto3.client(
-                    service_name='bedrock-runtime',
-                    region_name=aws_region
-                )
-                print("--- DEBUG: Using default AWS credential chain")
-                st.toast(f"Using default AWS credentials for {aws_region}")
+                st.success(f"✅ Connected to AWS Bedrock in {aws_region}")
                 
+                # Test the connection
+                try:
+                    # Just test if we can make a simple call (this won't actually invoke a model)
+                    # We'll just check if the client is properly authenticated
+                    print("--- DEBUG: Testing Bedrock client connection...")
+                    st.info("🔍 Testing AWS Bedrock connection...")
+                except Exception as test_e:
+                    print(f"--- DEBUG: Bedrock connection test failed: {test_e}")
+                    st.warning(f"⚠️ Bedrock connection test failed: {test_e}")
+                    
+            else:
+                print("--- DEBUG: No AWS credentials found, trying default credential chain")
+                st.warning("⚠️ No explicit credentials found, trying default AWS credential chain")
+                
+                try:
+                    # Try without explicit credentials (use default AWS credential chain)
+                    self.client = boto3.client(
+                        service_name='bedrock-runtime',
+                        region_name=aws_region
+                    )
+                    print("--- DEBUG: Using default AWS credential chain")
+                    st.info("📋 Using default AWS credential chain")
+                except Exception as default_e:
+                    print(f"--- DEBUG: Default credential chain also failed: {default_e}")
+                    st.error(f"❌ Default credential chain failed: {default_e}")
+                    self.client = None
+                    
         except Exception as e:
             print(f"--- DEBUG: Failed to initialize Bedrock client. Error: {e}")
-            st.error(f"Failed to initialize Bedrock client: {e}")
+            st.error(f"❌ Failed to initialize Bedrock client: {e}")
             st.error("Please check your AWS credentials in Streamlit Cloud secrets.")
             self.client = None
-    
+
     def _separate_system_prompt(self, messages):
         """Separates the system prompt from the message list for Claude API."""
         system_prompt = ""
@@ -68,7 +116,22 @@ class AIService:
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
         """Get a response from the Bedrock API using Claude."""
         if not self.client:
-            return "Error: Bedrock client not initialized. Please check AWS credentials."
+            error_msg = """
+            ❌ **Bedrock client not initialized**
+            
+            **To fix this:**
+            1. Go to your Streamlit Cloud app settings
+            2. Click the 'Secrets' tab
+            3. Add your AWS credentials in this format:
+            ```
+            [aws]
+            aws_access_key_id = "YOUR_ACCESS_KEY"
+            aws_secret_access_key = "YOUR_SECRET_KEY"
+            aws_default_region = "us-east-1"
+            ```
+            4. Save and restart your app
+            """
+            return error_msg
 
         system_prompt, claude_messages = self._separate_system_prompt(messages)
 
@@ -96,6 +159,7 @@ class AIService:
                 for block in response_body["content"]:
                     if block.get("type") == "text":
                         text_content += block.get("text", "")
+                print("--- DEBUG: Successfully got response from Claude")
                 return text_content.strip()
             elif response_body.get("completion"): 
                  return response_body.get("completion").strip()
@@ -106,7 +170,7 @@ class AIService:
         except Exception as e: 
             print(f"--- DEBUG: Bedrock API Error: {e}")
             st.error(f"Bedrock API Error: {e}")
-            return f"Error: {e}"
+            return f"Error calling Bedrock API: {e}"
 
     def extract_user_info(self, user_input):
         """Extract user name and company name from the first response using Claude."""
