@@ -1,4 +1,4 @@
-# app.py
+# app.py - Fixed version for ACEBotV2
 # IMPORTANT: set_page_config must be the very first Streamlit command!
 import streamlit as st
 
@@ -59,45 +59,16 @@ try:
 except Exception as e:
     st.warning(f"Could not load CSS: {e}. Using default styling.")
 
-def cleanup_html_messages():
-    """Clean up any HTML content in existing messages."""
-    import re
-    
-    if 'visible_messages' not in st.session_state:
-        return
-        
-    cleaned_messages = []
-    for msg in st.session_state.visible_messages:
-        if msg["role"] == "assistant" and ("<div" in msg["content"] or "<p" in msg["content"]):
-            content = msg["content"]
-            
-            # Try to extract clean text from HTML
-            # Remove HTML tags
-            clean_content = re.sub(r'<[^>]+>', '', content)
-            
-            # Clean up extra whitespace
-            clean_content = re.sub(r'\s+', ' ', clean_content).strip()
-            
-            # If we can extract meaningful content, use it
-            if len(clean_content) > 20:  # Arbitrary threshold for meaningful content
-                msg["content"] = clean_content
-        
-        cleaned_messages.append(msg)
-    
-    st.session_state.visible_messages = cleaned_messages
-
 def handle_help_request():
-    """Handle help button clicks with improved error handling."""
+    """Handle help button clicks - simplified approach matching V3."""
     try:
         # Find the last question asked
         last_question = None
         for msg in reversed(st.session_state.visible_messages):
             if msg["role"] == "assistant" and "?" in msg["content"]:
+                # Extract the question part
                 content = msg["content"]
-                if "To continue with our question:" in content:
-                    last_question = content.split("To continue with our question:")[-1].strip()
-                else:
-                    # Extract the last sentence with a question mark
+                if "?" in content:
                     sentences = content.split(".")
                     for sentence in reversed(sentences):
                         if "?" in sentence:
@@ -109,18 +80,15 @@ def handle_help_request():
             st.error("Could not find a question to provide help for.")
             return
         
-        # Create help request messages
-        help_messages = st.session_state.chat_history.copy()
-        help_messages.append({
-            "role": "user",
-            "content": f"I need help understanding this question: {last_question}"
-        })
+        # Simple help request - similar to V3
+        help_messages = [
+            {"role": "user", "content": f"I need help understanding this question: {last_question}\n\nPlease explain what information you're looking for in simple terms."}
+        ]
         
-        # Get help response
         help_response = services["ai_service"].get_response(help_messages)
         
         if help_response and not help_response.startswith("Error"):
-            # Add to chat history
+            # Add to conversation history
             st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
             st.session_state.chat_history.append({"role": "assistant", "content": help_response})
             st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
@@ -132,21 +100,14 @@ def handle_help_request():
         st.error(f"Error processing help request: {e}")
 
 def handle_example_request():
-    """Handle example button clicks with improved error handling."""
+    """Handle example button clicks - simplified approach matching V3."""
     try:
         # Find the last question asked
         last_question = None
         for msg in reversed(st.session_state.visible_messages):
             if msg["role"] == "assistant" and "?" in msg["content"]:
                 content = msg["content"]
-                # Skip messages that are HTML or contain raw HTML
-                if "<div" in content or "<p" in content:
-                    continue
-                    
-                if "To continue with our question:" in content:
-                    last_question = content.split("To continue with our question:")[-1].strip()
-                else:
-                    # Extract the last sentence with a question mark
+                if "?" in content:
                     sentences = content.split(".")
                     for sentence in reversed(sentences):
                         if "?" in sentence:
@@ -161,11 +122,11 @@ def handle_example_request():
         # Get example response
         example_text = services["ai_service"].get_example_response(last_question)
         
-        if example_text and not example_text.startswith("Error") and not "<div" in example_text:
-            # Create the properly formatted example message
+        if example_text and not example_text.startswith("Error"):
+            # Format example properly for display - matching V3 format
             full_example_content = f"*Example: {example_text}*\n\nTo continue with our question:\n{last_question}"
             
-            # Add to chat history
+            # Add to conversation history
             st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
             st.session_state.chat_history.append({"role": "assistant", "content": full_example_content})
             st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
@@ -175,7 +136,6 @@ def handle_example_request():
             
     except Exception as e:
         st.error(f"Error processing example request: {e}")
-        print(f"DEBUG: Example request error: {e}")
 
 def add_sidebar_ui():
     """Add the sidebar UI elements."""
@@ -221,7 +181,7 @@ def add_sidebar_ui():
         # Resume section
         st.markdown("### Resume Progress")
         
-        # Server restore section (priority method)
+        # Server restore section
         st.markdown("#### Resume from Server")
         session_id = st.text_input("Enter Session ID")
         if session_id and st.button("Load from Server", key="server_load"):
@@ -304,9 +264,6 @@ def main():
                 st.error(f"Error initializing session state: {e}")
                 st.stop()
         
-        # Clean up any HTML messages from previous versions
-        cleanup_html_messages()
-        
         # Display chat history
         services["chat_ui"].display_chat_history()
         
@@ -365,7 +322,18 @@ def main():
                     # Process the user input
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
-                    if message_type["type"] == "summary_request" or message_type["type"] == "frustration":
+                    if message_type["type"] == "example_request":
+                        # Handle inline example requests
+                        handle_example_request()
+                        st.rerun()
+                        
+                    elif message_type["type"] == "help_request":
+                        # Handle inline help requests
+                        handle_help_request() 
+                        st.rerun()
+                        
+                    elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
+                        # Handle summary requests
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
@@ -377,18 +345,16 @@ def main():
                             for topic in st.session_state.topic_areas_covered: 
                                 st.session_state.topic_areas_covered[topic] = True
                             summary_confirm = "I'll prepare a summary of your responses. You can download it below."
-                            st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                         else:
                             summary_readiness = services["topic_tracker"].check_summary_readiness()
                             if summary_readiness["ready"]:
                                 st.session_state.summary_requested = True
                                 summary_confirm = "I'll prepare a summary of your responses. You can download it below."
-                                st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
-                                st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                             else:
-                                st.session_state.chat_history.append({"role": "assistant", "content": summary_readiness["message"]})
-                                st.session_state.visible_messages.append({"role": "assistant", "content": summary_readiness["message"]})
+                                summary_confirm = summary_readiness["message"]
+                        
+                        st.session_state.chat_history.append({"role": "assistant", "content": summary_confirm})
+                        st.session_state.visible_messages.append({"role": "assistant", "content": summary_confirm})
                         st.rerun()
                         
                     else: # Regular input
@@ -399,18 +365,9 @@ def main():
                             # Get main AI response
                             ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
                             
-                            # Validate AI response - ensure it's not HTML
-                            if ai_response_content and ("<div" in ai_response_content or "<html" in ai_response_content):
-                                print(f"WARNING: AI returned HTML content: {ai_response_content[:200]}...")
-                                # Try to clean it up
-                                import re
-                                clean_content = re.sub(r'<[^>]+>', '', ai_response_content)
-                                clean_content = re.sub(r'\s+', ' ', clean_content).strip()
-                                
-                                if len(clean_content) > 20:
-                                    ai_response_content = clean_content
-                                else:
-                                    ai_response_content = "I apologize, but I encountered an issue generating my response. Could you please rephrase your question?"
+                            # Simple validation - ensure response is not empty
+                            if not ai_response_content or ai_response_content.startswith("Error"):
+                                ai_response_content = "I apologize, but I encountered an issue generating my response. Could you please rephrase your question?"
                             
                             # Check if it's a topic update or regular response
                             is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content)
@@ -420,45 +377,43 @@ def main():
                                 st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
                                 
-                                # Force topic update check
-                                topic_check_messages = st.session_state.chat_history.copy()
-                                topic_check_messages.append({
-                                    "role": "user",
-                                    "content": (
-                                        "Based on the conversation, update topic coverage. "
-                                        "Respond ONLY with: TOPIC_UPDATE: {\"basic_info\": true/false, "
-                                        "\"staffing_details\": true/false, \"contact_process\": true/false, "
-                                        "\"list_management\": true/false, \"insufficient_staffing\": true/false, "
-                                        "\"calling_logistics\": true/false, \"list_changes\": true/false, "
-                                        "\"tiebreakers\": true/false, \"additional_rules\": true/false}"
-                                    )
-                                })
-                                
-                                topic_update_response = services["ai_service"].get_response(topic_check_messages)
-                                services["topic_tracker"].process_topic_update(topic_update_response)
+                                # Simple topic update check - create a separate call for topic tracking
+                                try:
+                                    topic_check_messages = [
+                                        {"role": "user", "content": f"Based on this conversation, which of these topics have been covered: basic_info, staffing_details, contact_process, list_management, insufficient_staffing, calling_logistics, list_changes, tiebreakers, additional_rules? Respond ONLY with: TOPIC_UPDATE: {{\"basic_info\": true/false, \"staffing_details\": true/false, \"contact_process\": true/false, \"list_management\": true/false, \"insufficient_staffing\": true/false, \"calling_logistics\": true/false, \"list_changes\": true/false, \"tiebreakers\": true/false, \"additional_rules\": true/false}}"}
+                                    ]
+                                    
+                                    topic_update_response = services["ai_service"].get_response(topic_check_messages)
+                                    services["topic_tracker"].process_topic_update(topic_update_response)
+                                except:
+                                    pass  # Don't let topic tracking errors break the main flow
 
                         except Exception as e:
-                            st.error(f"An error occurred while processing AI response: {e}. Please try again.")
-                            print(f"ERROR: AI response processing failed: {e}")
-                            # Add a fallback message to keep conversation flowing
+                            st.error(f"An error occurred while processing your response: {e}. Please try again.")
                             fallback_msg = "I'm sorry, I encountered a technical issue. Could you please repeat your last response?"
                             st.session_state.chat_history.append({"role": "assistant", "content": fallback_msg})
                             st.session_state.visible_messages.append({"role": "assistant", "content": fallback_msg})
                         
                         # Extract user info if this is the first response
                         if st.session_state.current_question_index == 0:
-                            user_info_data = services["ai_service"].extract_user_info(user_input)
-                            if user_info_data["name"] or user_info_data["company"]:
-                                st.session_state.user_info = user_info_data
+                            try:
+                                user_info_data = services["ai_service"].extract_user_info(user_input)
+                                if user_info_data["name"] or user_info_data["company"]:
+                                    st.session_state.user_info = user_info_data
+                            except:
+                                pass  # Don't let user info extraction break the flow
                         
                         # Update question tracking
                         if st.session_state.current_question_index < len(st.session_state.questions):
-                            is_answer = services["ai_service"].check_response_type(st.session_state.current_question, user_input)
-                            if is_answer:
-                                st.session_state.responses.append((st.session_state.current_question, user_input))
-                                st.session_state.current_question_index += 1
-                                if st.session_state.current_question_index < len(st.session_state.questions):
-                                    st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
+                            try:
+                                is_answer = services["ai_service"].check_response_type(st.session_state.current_question, user_input)
+                                if is_answer:
+                                    st.session_state.responses.append((st.session_state.current_question, user_input))
+                                    st.session_state.current_question_index += 1
+                                    if st.session_state.current_question_index < len(st.session_state.questions):
+                                        st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
+                            except:
+                                pass  # Don't let question tracking break the flow
                         
                         st.rerun()
 
@@ -466,44 +421,28 @@ def main():
         st.markdown("## How to Use the ACE Questionnaire")
         st.markdown("""
         ### Welcome to the ACE Questionnaire!
-        This tool is designed to gather detailed information about your utility company's callout processes for ARCOS implementation. Follow these simple instructions to complete the questionnaire:
+        This tool is designed to gather detailed information about your utility company's callout processes for ARCOS implementation.
+        
         #### Getting Started
         1. Enter your name and company name when prompted
         2. Answer each question to the best of your ability
         3. If you need to take a break, use the "Save Progress" button in the sidebar
+        
         #### Special Features
         * **Need Help?** - Click the "Need help?" button below any question to get a detailed explanation
         * **Examples** - Click the "Example" button to see sample responses for the current question
         * **Save Progress** - Save your work at any time using the sidebar option
         * **Resume Later** - Use your session ID or upload your saved file to continue where you left off
-        #### Navigation Tips
-        * Answer one question at a time
-        * The progress bar shows how many topic areas you've completed
-        * All 9 topic areas must be covered to complete the questionnaire
-        * When complete, you'll receive a summary you can download
-        #### Topic Areas Covered
-        1. Basic Information - User, company, callout types
-        2. Staffing Details - Employee requirements and roles
-        3. Contact Process - First contact and methods
-        4. List Management - Organization and traversal
-        5. Insufficient Staffing - Alternative procedures
-        6. Calling Logistics - Simultaneous calls, callbacks
-        7. List Changes - Updates to ordering and content
-        8. Tiebreakers - Methods when ordering is equal
-        9. Additional Rules - Scheduling and exceptions
-        If you have any questions about the questionnaire, please check the FAQ tab or contact your ARCOS implementation consultant.
         """)
     
     with tab3:
         st.markdown("## Frequently Asked Questions")
         with st.expander("What is the ACE Questionnaire?"):
-            st.write("The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes. This information helps ARCOS solution consultants understand your specific requirements and configure the ARCOS system to match your existing workflows.")
+            st.write("The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes.")
         with st.expander("How long does it take to complete?"):
-            st.write("The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your callout processes. You can save your progress at any time and return to complete it later.")
+            st.write("The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your callout processes.")
         with st.expander("Can I save my progress and continue later?"):
-            st.write("Yes! Use the \"Save Progress\" button in the sidebar to save your current progress. You'll receive a Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also download a backup file if needed.")
-        with st.expander("What if I don't know the answer to a question?"):
-            st.write("If you're unsure about any question, click the \"Need help?\" button for a detailed explanation. If you still don't know, provide your best understanding and make a note that this area may need further discussion with your implementation consultant.")
+            st.write("Yes! Use the 'Save Progress' button in the sidebar to save your current progress.")
 
 add_sidebar_ui()
 

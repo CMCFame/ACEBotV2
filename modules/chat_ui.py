@@ -1,4 +1,4 @@
-# modules/chat_ui.py
+# modules/chat_ui.py - Simplified version for ACEBotV2
 import streamlit as st
 from datetime import datetime
 import re
@@ -10,7 +10,7 @@ class ChatUI:
         pass
     
     def display_chat_history(self):
-        """Display the chat history with styled messages and improved example formatting."""
+        """Display the chat history with styled messages - simplified approach matching V3."""
         for message in st.session_state.visible_messages:
             # USER MESSAGES
             if message["role"] == "user":
@@ -31,18 +31,12 @@ class ChatUI:
             elif message["role"] == "assistant":
                 content = message["content"]
                 
-                # Check if this is raw HTML that should be escaped and treated as a regular message
-                if ("<div style=" in content and "background-color:" in content and 
-                    "Example:" in content and "Question:" in content):
-                    # This is raw HTML that should be parsed and displayed properly
-                    self._display_example_from_html(content)
-                    
-                # ENHANCED EXAMPLE & QUESTION BOX (formatted text)
-                elif "*Example:" in content or "Example:" in content:
+                # Check for example format (matching V3 style)
+                if "*Example:" in content and "To continue with our question:" in content:
                     self._display_example_and_question(content)
-                    
-                # HELP BOX
-                elif ("help" in content.lower() and ("understanding" in content.lower() or "explanation" in content.lower())) or content.startswith("I need help"):
+                
+                # Check for help responses
+                elif any(word in content.lower() for word in ["help", "explanation", "understanding"]) and len(content) > 100:
                     st.markdown(
                         f"""
                         <div style="background-color: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #17a2b8;">
@@ -53,7 +47,7 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
                     
-                # WELCOME BACK MESSAGE (SESSION RESTORATION)
+                # Welcome back messages
                 elif "Welcome back!" in content and ("restored" in content or "resume" in content):
                     st.markdown(
                         f"""
@@ -69,10 +63,10 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
 
-                # REGULAR ASSISTANT MESSAGE
+                # Regular assistant messages
                 else:
-                    # Escape any raw HTML that shouldn't be rendered
-                    if "<div" in content or "<p" in content:
+                    # Clean any HTML that might have slipped through
+                    if "<" in content and ">" in content:
                         content = html.escape(content)
                     
                     st.markdown(
@@ -89,56 +83,32 @@ class ChatUI:
                         unsafe_allow_html=True
                     )
     
-    def _display_example_from_html(self, html_content):
-        """Parse raw HTML content and extract example and question to display properly."""
-        # Try to extract example text from HTML
-        example_match = re.search(r'Example:</p>\s*<p[^>]*>([^<]+)</p>', html_content)
-        example_text = example_match.group(1) if example_match else ""
+    def _display_example_and_question(self, content):
+        """Display example and question with proper formatting - matching V3 style."""
+        # Extract example and question parts
+        example_text = ""
+        question_text = ""
         
-        # Try to extract question text from HTML
-        question_match = re.search(r'Question:</p>\s*<p[^>]*>([^<]+)</p>', html_content)
-        question_text = question_match.group(1) if question_match else ""
-        
-        # If we couldn't parse the HTML properly, fall back to a simple display
-        if not example_text and not question_text:
-            # Try a broader extraction
-            example_match = re.search(r'Example:(.*?)Question:', html_content, re.DOTALL)
-            if example_match:
-                example_text = re.sub(r'<[^>]+>', '', example_match.group(1)).strip()
+        if "*Example:" in content:
+            # Extract example text
+            example_start = content.find("*Example:") + 9
+            example_end = content.find("*", example_start)
+            if example_end != -1:
+                example_text = content[example_start:example_end].strip()
             
-            question_match = re.search(r'Question:(.*?)$', html_content, re.DOTALL)
-            if question_match:
-                question_text = re.sub(r'<[^>]+>', '', question_match.group(1)).strip()
+            # Extract question part
+            if "To continue with our question:" in content:
+                question_start = content.find("To continue with our question:") + 31
+                question_text = content[question_start:].strip()
         
-        # Display using the standard method
-        if example_text or question_text:
-            self._render_example_box(example_text, question_text)
-        else:
-            # Fallback: display as escaped HTML
-            escaped_content = html.escape(html_content)
-            st.markdown(
-                f"""
-                <div style="display: flex; margin-bottom: 10px;">
-                  <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 10px 15px; max-width: 80%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
-                    <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
-                    <div style="margin-top: 5px;">
-                      <p style="margin: 0; white-space: pre-wrap;">{escaped_content}</p>
-                    </div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-    
-    def _render_example_box(self, example_text, question_text):
-        """Render example and question in properly formatted boxes."""
+        # Display in formatted boxes
         html_content = f"""
         <div style="display: flex; margin-bottom: 15px;">
           <div style="background-color: #f0f2f6; border-radius: 15px 15px 15px 0; padding: 15px; width: 90%; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
             <p style="margin: 0; color: #333;"><strong>Assistant</strong></p>
         """
         
-        # Only add example box if example was found
+        # Add example box if we have example text
         if example_text:
             html_content += f"""
             <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 10px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
@@ -147,7 +117,7 @@ class ChatUI:
             </div>
             """
         
-        # Add question part if found
+        # Add question box if we have question text
         if question_text:
             html_content += f"""
             <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border-left: 5px solid #007bff;">
@@ -162,73 +132,6 @@ class ChatUI:
         """
         
         st.markdown(html_content, unsafe_allow_html=True)
-    
-    def _display_example_and_question(self, content):
-        """
-        Display example and question with enhanced visual separation.
-        Uses a simplified parsing approach for better compatibility.
-        """
-        # Extract example content using basic string operations
-        example_text = ""
-        question_text = ""
-        
-        # Find example part
-        if "*Example:" in content:
-            parts = content.split("*Example:", 1)
-            if len(parts) > 1:
-                example_parts = parts[1].split("*", 1)
-                if len(example_parts) > 1:
-                    example_text = example_parts[0].strip()
-                    remaining = example_parts[1].strip()
-                else:
-                    example_text = example_parts[0].strip()
-                    remaining = ""
-            else:
-                remaining = content
-        elif "Example:" in content:
-            parts = content.split("Example:", 1)
-            if len(parts) > 1:
-                # Look for the end of the example
-                example_content = parts[1]
-                if "To continue with our question" in example_content:
-                    example_parts = example_content.split("To continue with our question", 1)
-                    example_text = example_parts[0].strip()
-                    if len(example_parts) > 1:
-                        question_text = example_parts[1].strip()
-                else:
-                    # If no clear separator, treat first sentence as example
-                    sentences = example_content.split(".")
-                    if sentences:
-                        example_text = sentences[0].strip()
-                        remaining = ".".join(sentences[1:]).strip()
-                    else:
-                        example_text = example_content.strip()
-                        remaining = ""
-            else:
-                remaining = content
-        else:
-            remaining = content
-            
-        # If we already have question text from above, use it
-        if not question_text and "To continue with our question" in remaining:
-            parts = remaining.split("To continue with our question", 1)
-            if len(parts) > 1:
-                question_text = parts[1].strip()
-        
-        # If still no question found, look for a sentence with a question mark
-        if not question_text:
-            sentences = remaining.split(". ")
-            for sentence in reversed(sentences):
-                if "?" in sentence:
-                    question_text = sentence.strip()
-                    break
-                    
-        # If still no question, use all remaining text
-        if not question_text and remaining and remaining != content:
-            question_text = remaining
-        
-        # Use the common rendering method
-        self._render_example_box(example_text, question_text)
     
     def add_help_example_buttons(self):
         """Add help and example buttons."""
@@ -275,7 +178,7 @@ class ChatUI:
     
     def display_completion_ui(self, summary_text, export_service, user_info, responses):
         """Display completion UI with summary and download options."""
-        # Add a more explicit completion message with button
+        # Add completion message
         st.markdown(
             """
             <div style="text-align: center; padding: 20px; background-color: #e8f5e8; border-radius: 10px; margin: 20px 0;">
@@ -290,23 +193,21 @@ class ChatUI:
             unsafe_allow_html=True
         )
         
-        # Add a clear finish button above the summary
+        # Add finalize button
         if not st.session_state.get("explicitly_finished", False):
             if st.button("✅ FINALIZE QUESTIONNAIRE", type="primary"):
                 st.session_state.explicitly_finished = True
                 st.rerun()
         
-        # Only show summary after explicit finalization
+        # Show summary and download options after finalization
         if st.session_state.get("explicitly_finished", False):
-            # Display summary in a text area
             st.write("### Summary of Responses")
             st.text_area("Summary", summary_text, height=300)
             
-            # Provide download options
+            # Download options
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Generate CSV for download
                 csv_data = export_service.generate_csv(responses)
                 st.download_button(
                     label="📥 Download as CSV",
@@ -316,7 +217,6 @@ class ChatUI:
                 )
             
             with col2:
-                # Download formatted summary
                 st.download_button(
                     label="📄 Download Summary",
                     data=summary_text,
@@ -325,7 +225,6 @@ class ChatUI:
                 )
                 
             with col3:
-                # Download full progress report
                 from modules.summary import SummaryGenerator
                 summary_gen = SummaryGenerator()
                 progress_dashboard = summary_gen.generate_progress_dashboard()
@@ -336,5 +235,4 @@ class ChatUI:
                     mime="text/markdown"
                 )
         else:
-            # Provide a brief instruction and the finalize button
             st.info("Please click the FINALIZE QUESTIONNAIRE button above to complete the process and view your summary.")
