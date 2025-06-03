@@ -29,26 +29,7 @@ except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
 
-# Function to create formatted HTML for examples
-def create_example_html(example_text, question_text):
-    """Create formatted HTML for examples and questions."""
-    return f"""
-    <div style="display: flex; margin-bottom: 15px;">
-      <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
-        <p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p>
-        <div style="background-color: #fff3cd; border-radius: 10px; padding: 15px; margin-top: 12px; margin-bottom: 15px; border: 1px solid #ffeeba; border-left: 5px solid #ffc107;">
-          <p style="margin: 0; font-weight: 600; color: #856404; font-size: 15px;">📝 Example</p>
-          <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
-        </div>
-        <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
-          <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
-          <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
-        </div>
-      </div>
-    </div>
-    """
-
-# Initialize services - removed caching to avoid widget error
+# Initialize services
 def init_services():
     """Initialize the application services."""
     session_manager = SessionManager()
@@ -78,101 +59,32 @@ try:
 except Exception as e:
     st.warning(f"Could not load CSS: {e}. Using default styling.")
 
-def add_sidebar_ui():
-    """Add the sidebar UI elements."""
-    with st.sidebar:
-        st.markdown("""
-            <div style="text-align: center; margin-bottom: 25px;">
-                <img src="https://www.publicpower.org/sites/default/files/logo-arcos_0.png"
-                     alt="Company Logo" style="max-width: 80%; height: auto; margin: 10px auto;" />
-            </div>
-            <div style="text-align: center;">
-                <h3 style="color: var(--primary-red); margin-bottom: 10px;">
-                    <i>Save & Resume Progress</i>
-                </h3>
-                <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
-                    Save your progress at any time and continue later.
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Save Progress button
-        if st.button("💾 Save Progress", key="save_progress"):
-            result = services["session_manager"].save_session()
+def cleanup_html_messages():
+    """Clean up any HTML content in existing messages."""
+    import re
+    
+    if 'visible_messages' not in st.session_state:
+        return
+        
+    cleaned_messages = []
+    for msg in st.session_state.visible_messages:
+        if msg["role"] == "assistant" and ("<div" in msg["content"] or "<p" in msg["content"]):
+            content = msg["content"]
             
-            if result["success"]:
-                if result["method"] == "server":
-                    st.success(f"Session saved. Your Session ID: {result['session_id']}")
-                    st.code(result["session_id"])
-                    st.info("Please copy and save this Session ID to resume your progress later.")
-                else:
-                    st.warning(result["message"])
-                    st.download_button(
-                        label="📥 Download Progress File",
-                        data=result["data"],
-                        file_name=f"ace_progress_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json",
-                        key="download_progress"
-                    )
-            else:
-                st.error(result["message"])
+            # Try to extract clean text from HTML
+            # Remove HTML tags
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            
+            # Clean up extra whitespace
+            clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+            
+            # If we can extract meaningful content, use it
+            if len(clean_content) > 20:  # Arbitrary threshold for meaningful content
+                msg["content"] = clean_content
         
-        # Progress dashboard button
-        if st.button("📊 View Progress Dashboard", key="view_progress"):
-            dashboard = services["summary_generator"].generate_progress_dashboard()
-            st.session_state.show_dashboard = True
-            st.session_state.dashboard_content = dashboard
-            st.rerun()
-
-        # Display dashboard if requested
-        if st.session_state.get("show_dashboard", False):
-            with st.expander("Progress Dashboard", expanded=True):
-                st.markdown(st.session_state.dashboard_content)
-                
-                st.download_button(
-                    label="📥 Download Progress Report",
-                    data=st.session_state.dashboard_content,
-                    file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
-                    mime="text/markdown"
-                )
-                
-                if st.button("Close Dashboard", key="close_dashboard"):
-                    st.session_state.show_dashboard = False
-                    st.rerun()
-
-        st.markdown("---")
-        
-        # Resume section
-        st.markdown("### Resume Progress")
-        
-        # Server restore section (priority method)
-        st.markdown("#### Resume from Server")
-        session_id = st.text_input("Enter Session ID")
-        if session_id and st.button("Load from Server", key="server_load"):
-            result = services["session_manager"].restore_session(source="server", session_id=session_id)
-            if result["success"]:
-                st.success(result["message"])
-                st.rerun()
-            else:
-                st.error(result["message"])
-        
-        # File upload option
-        st.markdown("#### Or Upload Progress File")
-        uploaded_file = st.file_uploader("Choose a saved progress file", type=["json"], key="progress_file")
-        
-        if uploaded_file is not None:
-            try:
-                content = uploaded_file.read().decode("utf-8")
-                
-                if st.button("📤 Load from File", key="load_file"):
-                    result = services["session_manager"].restore_session(source="file", file_data=content)
-                    if result["success"]:
-                        st.success(result["message"])
-                        st.rerun()
-                    else:
-                        st.error(result["message"])
-            except Exception as e:
-                st.error(f"Error processing file: {e}")
+        cleaned_messages.append(msg)
+    
+    st.session_state.visible_messages = cleaned_messages
 
 def handle_help_request():
     """Handle help button clicks with improved error handling."""
@@ -265,29 +177,78 @@ def handle_example_request():
         st.error(f"Error processing example request: {e}")
         print(f"DEBUG: Example request error: {e}")
 
-def cleanup_html_messages():
-    """Clean up any HTML content in existing messages."""
-    import re
-    
-    cleaned_messages = []
-    for msg in st.session_state.visible_messages:
-        if msg["role"] == "assistant" and ("<div" in msg["content"] or "<p" in msg["content"]):
-            content = msg["content"]
+def add_sidebar_ui():
+    """Add the sidebar UI elements."""
+    with st.sidebar:
+        st.markdown("""
+            <div style="text-align: center; margin-bottom: 25px;">
+                <img src="https://www.publicpower.org/sites/default/files/logo-arcos_0.png"
+                     alt="Company Logo" style="max-width: 80%; height: auto; margin: 10px auto;" />
+            </div>
+            <div style="text-align: center;">
+                <h3 style="color: var(--primary-red); margin-bottom: 10px;">
+                    <i>Save & Resume Progress</i>
+                </h3>
+                <p style="font-size: 0.9em; color: #555; margin-bottom: 20px;">
+                    Save your progress at any time and continue later.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Save Progress button
+        if st.button("💾 Save Progress", key="save_progress"):
+            result = services["session_manager"].save_session()
             
-            # Try to extract clean text from HTML
-            # Remove HTML tags
-            clean_content = re.sub(r'<[^>]+>', '', content)
-            
-            # Clean up extra whitespace
-            clean_content = re.sub(r'\s+', ' ', clean_content).strip()
-            
-            # If we can extract meaningful content, use it
-            if len(clean_content) > 20:  # Arbitrary threshold for meaningful content
-                msg["content"] = clean_content
+            if result["success"]:
+                if result["method"] == "server":
+                    st.success(f"Session saved. Your Session ID: {result['session_id']}")
+                    st.code(result["session_id"])
+                    st.info("Please copy and save this Session ID to resume your progress later.")
+                else:
+                    st.warning(result["message"])
+                    st.download_button(
+                        label="📥 Download Progress File",
+                        data=result["data"],
+                        file_name=f"ace_progress_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        key="download_progress"
+                    )
+            else:
+                st.error(result["message"])
         
-        cleaned_messages.append(msg)
-    
-    st.session_state.visible_messages = cleaned_messages
+        st.markdown("---")
+        
+        # Resume section
+        st.markdown("### Resume Progress")
+        
+        # Server restore section (priority method)
+        st.markdown("#### Resume from Server")
+        session_id = st.text_input("Enter Session ID")
+        if session_id and st.button("Load from Server", key="server_load"):
+            result = services["session_manager"].restore_session(source="server", session_id=session_id)
+            if result["success"]:
+                st.success(result["message"])
+                st.rerun()
+            else:
+                st.error(result["message"])
+        
+        # File upload option
+        st.markdown("#### Or Upload Progress File")
+        uploaded_file = st.file_uploader("Choose a saved progress file", type=["json"], key="progress_file")
+        
+        if uploaded_file is not None:
+            try:
+                content = uploaded_file.read().decode("utf-8")
+                
+                if st.button("📤 Load from File", key="load_file"):
+                    result = services["session_manager"].restore_session(source="file", file_data=content)
+                    if result["success"]:
+                        st.success(result["message"])
+                        st.rerun()
+                    else:
+                        st.error(result["message"])
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
 
 def main():
     """Main application function."""
@@ -543,19 +504,6 @@ def main():
             st.write("Yes! Use the \"Save Progress\" button in the sidebar to save your current progress. You'll receive a Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also download a backup file if needed.")
         with st.expander("What if I don't know the answer to a question?"):
             st.write("If you're unsure about any question, click the \"Need help?\" button for a detailed explanation. If you still don't know, provide your best understanding and make a note that this area may need further discussion with your implementation consultant.")
-        with st.expander("Will my answers be saved automatically?"):
-            st.write("No, your answers are not saved automatically. Be sure to use the \"Save Progress\" button in the sidebar to save your work before closing the application.")
-        with st.expander("Who will see my responses?"):
-            st.write("Your responses will be shared with the ARCOS implementation team assigned to your project. The information is used solely for configuring your ARCOS system to match your requirements.")
-        with st.expander("What happens after I complete the questionnaire?"):
-            st.write("After completion, you'll receive a summary of your responses that you can download. A notification will also be sent to your ARCOS implementation consultant, who will review your responses and schedule a follow-up discussion to clarify any points as needed.")
-        with st.expander("How do I resume a saved session?"):
-            st.write("""
-            To resume a saved session, you have two options:
-            1. **Using Session ID**: Enter your Session ID in the sidebar and click "Load from Server". This is the recommended method if you saved your session ID when prompted.
-            2. **Using a File**: If you downloaded a progress file, you can upload it in the sidebar under "Upload Progress File" and then click "Load from File".
-            The system will restore your conversation exactly where you left off, and the AI will remember the context of your previous discussion.
-            """)
 
 add_sidebar_ui()
 
