@@ -227,6 +227,10 @@ def handle_example_request():
         for msg in reversed(st.session_state.visible_messages):
             if msg["role"] == "assistant" and "?" in msg["content"]:
                 content = msg["content"]
+                # Skip messages that are HTML or contain raw HTML
+                if "<div" in content or "<p" in content:
+                    continue
+                    
                 if "To continue with our question:" in content:
                     last_question = content.split("To continue with our question:")[-1].strip()
                 else:
@@ -245,8 +249,8 @@ def handle_example_request():
         # Get example response
         example_text = services["ai_service"].get_example_response(last_question)
         
-        if example_text and not example_text.startswith("Error"):
-            # Create the full example message
+        if example_text and not example_text.startswith("Error") and not "<div" in example_text:
+            # Create the properly formatted example message
             full_example_content = f"*Example: {example_text}*\n\nTo continue with our question:\n{last_question}"
             
             # Add to chat history
@@ -259,6 +263,31 @@ def handle_example_request():
             
     except Exception as e:
         st.error(f"Error processing example request: {e}")
+        print(f"DEBUG: Example request error: {e}")
+
+def cleanup_html_messages():
+    """Clean up any HTML content in existing messages."""
+    import re
+    
+    cleaned_messages = []
+    for msg in st.session_state.visible_messages:
+        if msg["role"] == "assistant" and ("<div" in msg["content"] or "<p" in msg["content"]):
+            content = msg["content"]
+            
+            # Try to extract clean text from HTML
+            # Remove HTML tags
+            clean_content = re.sub(r'<[^>]+>', '', content)
+            
+            # Clean up extra whitespace
+            clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+            
+            # If we can extract meaningful content, use it
+            if len(clean_content) > 20:  # Arbitrary threshold for meaningful content
+                msg["content"] = clean_content
+        
+        cleaned_messages.append(msg)
+    
+    st.session_state.visible_messages = cleaned_messages
 
 def main():
     """Main application function."""
@@ -313,6 +342,9 @@ def main():
             except Exception as e:
                 st.error(f"Error initializing session state: {e}")
                 st.stop()
+        
+        # Clean up any HTML messages from previous versions
+        cleanup_html_messages()
         
         # Display chat history
         services["chat_ui"].display_chat_history()
@@ -406,6 +438,19 @@ def main():
                             # Get main AI response
                             ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
                             
+                            # Validate AI response - ensure it's not HTML
+                            if ai_response_content and ("<div" in ai_response_content or "<html" in ai_response_content):
+                                print(f"WARNING: AI returned HTML content: {ai_response_content[:200]}...")
+                                # Try to clean it up
+                                import re
+                                clean_content = re.sub(r'<[^>]+>', '', ai_response_content)
+                                clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+                                
+                                if len(clean_content) > 20:
+                                    ai_response_content = clean_content
+                                else:
+                                    ai_response_content = "I apologize, but I encountered an issue generating my response. Could you please rephrase your question?"
+                            
                             # Check if it's a topic update or regular response
                             is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content)
                             
@@ -434,6 +479,10 @@ def main():
                         except Exception as e:
                             st.error(f"An error occurred while processing AI response: {e}. Please try again.")
                             print(f"ERROR: AI response processing failed: {e}")
+                            # Add a fallback message to keep conversation flowing
+                            fallback_msg = "I'm sorry, I encountered a technical issue. Could you please repeat your last response?"
+                            st.session_state.chat_history.append({"role": "assistant", "content": fallback_msg})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": fallback_msg})
                         
                         # Extract user info if this is the first response
                         if st.session_state.current_question_index == 0:

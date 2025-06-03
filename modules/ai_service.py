@@ -259,36 +259,49 @@ class AIService:
         system_message = (
             "You are providing a brief example answer for a utility company callout process question. "
             f"The question you need to provide an example for is: \"{last_question}\"\n\n"
-            "Your task is to provide ONLY the example text itself. It should be short (1-2 sentences) and specific. "
-            "Do NOT include any prefixes like 'Example:', 'Here's an example:', or any explanations. "
-            "Do NOT repeat the question. Just output the example sentence(s).\n\n"
-            "For instance, if the question was about who to contact first, a good direct example output from you would be: "
-            "\"We contact the on-call supervisor first as they are responsible for assessing the situation and dispatching the appropriate crew.\""
+            "CRITICAL INSTRUCTIONS:\n"
+            "- Provide ONLY plain text - NO HTML tags whatsoever\n"
+            "- Do NOT include any formatting like <div>, <p>, <strong>, etc.\n"
+            "- Your response should be 1-2 sentences of plain text only\n"
+            "- Do NOT include prefixes like 'Example:', 'Here's an example:', etc.\n"
+            "- Do NOT repeat the question\n"
+            "- Just provide the example text directly\n\n"
+            "For instance, if asked about who to contact first, respond simply with:\n"
+            "\"We contact the on-call supervisor first as they assess the situation and dispatch the appropriate crew.\""
         )
         
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": "Provide the example answer now."}
+            {"role": "user", "content": "Provide the plain text example answer now - no HTML, no formatting, just the example text."}
         ]
 
         try:
-            example_response_text = self.get_response(messages, max_tokens=150, temperature=0.7)
+            example_response_text = self.get_response(messages, max_tokens=100, temperature=0.5)
             
-            # Clean up the response
+            # Clean up the response aggressively
             cleaned_response = example_response_text.strip()
+            
+            # Remove any HTML tags that might have slipped through
+            import re
+            cleaned_response = re.sub(r'<[^>]+>', '', cleaned_response)
             
             # Remove common prefixes if they appear
             prefixes_to_remove = [
                 "Example:", "Here's an example:", "For example:", "An example would be:",
-                "Example answer:", "Sample response:", "Here's a sample:", "A sample answer would be:"
+                "Example answer:", "Sample response:", "Here's a sample:", "A sample answer would be:",
+                "Response:", "Answer:"
             ]
             
             for prefix in prefixes_to_remove:
                 if cleaned_response.startswith(prefix):
                     cleaned_response = cleaned_response[len(prefix):].strip()
             
-            return cleaned_response if cleaned_response else "Unable to generate example response."
+            # Ensure it's not empty and doesn't contain HTML
+            if cleaned_response and "<" not in cleaned_response and ">" not in cleaned_response:
+                return cleaned_response
+            else:
+                return "We typically respond to emergency situations requiring immediate attention, such as power outages or equipment failures."
             
         except Exception as e:
             print(f"Error getting example response: {e}")
-            return "Unable to generate example response."
+            return "We respond to urgent situations that require immediate crew dispatch and repair work."
