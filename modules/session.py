@@ -1,4 +1,3 @@
-# modules/session.py
 import json
 import time
 import streamlit as st
@@ -213,7 +212,7 @@ class SessionManager:
             )
             # Add this instruction to the chat_history so the AI generates the welcome back message
             st.session_state.chat_history.append({
-                 "role": "user", # Changed from "system"
+                 "role": "system", # Changed from "user" to "system"
                  "content": restoration_context_content
             })
             # *** MODIFIED SECTION FOR RESTORATION CONTEXT END ***

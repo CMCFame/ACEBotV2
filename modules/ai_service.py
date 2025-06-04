@@ -1,4 +1,3 @@
-# modules/ai_service.py
 import boto3
 import streamlit as st
 import json
@@ -40,38 +39,24 @@ class AIService:
             self.client = None
 
     def _clean_and_prepare_messages(self, messages):
-        """Clean messages and prepare them for Claude, preserving the main system prompt."""
-        if not messages:
-            return "", []
-        
-        # Extract the main system prompt (should be first message)
-        main_system_prompt = ""
-        if messages[0].get("role") == "system":
-            main_system_prompt = messages[0]["content"]
-            remaining_messages = messages[1:]
-        else:
-            remaining_messages = messages
-        
-        # Clean and validate user/assistant messages
+        """Clean messages and prepare them for Claude, consolidating all system prompts into one string."""
+        consolidated_system_prompt = ""
         claude_messages = []
-        for msg in remaining_messages:
+
+        for msg in messages:
             if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
                 continue
                 
             role = msg["role"]
             content = str(msg["content"]) if msg["content"] is not None else ""
             
-            # FIXED: Convert system messages to user messages with clear markers
             if role == "system":
-                # Convert system instructions to user messages so Claude sees them
-                content = f"[INSTRUCTION]: {content}"
-                role = "user"
-            
-            # Only keep non-empty user/assistant messages
-            if role in ["user", "assistant"] and content.strip():
+                # Consolidate all system messages into one system prompt string
+                consolidated_system_prompt += content.strip() + "\n\n"
+            elif role in ["user", "assistant"] and content.strip():
                 claude_messages.append({"role": role, "content": content.strip()})
         
-        return main_system_prompt, claude_messages
+        return consolidated_system_prompt.strip(), claude_messages
 
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
         """Get a response from the Bedrock API using Claude."""
@@ -83,7 +68,12 @@ class AIService:
             
             # Ensure we have at least one message for Claude
             if not claude_messages:
-                return "No valid messages to process."
+                # If there are no user/assistant messages but there is a system prompt,
+                # create a dummy user message to initiate the conversation from the system prompt.
+                if system_prompt:
+                    claude_messages.append({"role": "user", "content": "Start the conversation based on your system instructions."})
+                else:
+                    return "No valid messages or system prompt to process."
 
             body = {
                 "anthropic_version": "bedrock-2023-05-31", 
@@ -129,11 +119,10 @@ class AIService:
         )
 
         extract_messages = [
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"User response: {user_input}"}
         ]
 
-        extract_response = self.get_response(extract_messages, max_tokens=100, temperature=0.0)
+        extract_response = self.get_response([{"role": "system", "content": system_prompt}] + extract_messages, max_tokens=100, temperature=0.0)
 
         try:
             name_part = "unknown"
@@ -176,11 +165,10 @@ class AIService:
         """Determine if a user message is an answer or a question/request using Claude."""
         system_prompt = "You are an AI assistant that determines if a user's message is a direct answer to a given question or if it's a request for help/clarification. Respond with only the single word 'ANSWER' or the single word 'QUESTION'."
         messages = [
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"The question asked was: '{question}'. The user responded: '{user_input}'. Is the user's response a direct answer to the question, or is it a request for help or clarification? Respond with only the single word 'ANSWER' or 'QUESTION'."}
         ]
 
-        response = self.get_response(messages, max_tokens=10, temperature=0.0)
+        response = self.get_response([{"role": "system", "content": system_prompt}] + messages, max_tokens=10, temperature=0.0)
         return "ANSWER" in response.upper()
 
     def process_special_message_types(self, user_input):
@@ -213,9 +201,8 @@ For instance, if the question was about who to contact first, a good direct exam
 """
         
         messages = [
-            {"role": "system", "content": system_message},
             {"role": "user", "content": "Provide the example answer now."}
         ]
 
-        example_response_text = self.get_response(messages, max_tokens=100, temperature=0.7)
+        example_response_text = self.get_response([{"role": "system", "content": system_message}] + messages, max_tokens=100, temperature=0.7)
         return example_response_text.strip()
