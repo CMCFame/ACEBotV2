@@ -17,7 +17,6 @@ from datetime import datetime
 # Continue with other imports
 try:
     from modules.session import SessionManager
-    from modules.ai_service import AIService
     from modules.topic_tracker import TopicTracker
     from modules.chat_ui import ChatUI
     from modules.summary import SummaryGenerator
@@ -25,6 +24,9 @@ try:
     from modules.email_service import EmailService
     from utils.helpers import load_css, apply_css, load_instructions, load_questions
     from config import TOPIC_AREAS
+    
+    # Use the fixed AI service
+    from modules.ai_service import AIService
 except ImportError as e:
     st.error(f"Import error: {e}. Please check that all required modules are installed.")
     st.stop()
@@ -437,23 +439,13 @@ def main():
                         break
                 
                 help_messages_for_ai = st.session_state.chat_history.copy()
-                help_messages_for_ai.append({
-                    "role": "user",
-                    "content": (
-                        "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
-                        f"The user is asking for help with the CURRENT question which is: '{last_question}'.\n"
-                        "Provide a helpful explanation specifically for THIS question, not a previous one. "
-                        "Address the user directly and explain what kind of information is being sought by the question.\n"
-                        "[END_SYSTEM_INSTRUCTION]"
-                    )
-                })
-                help_messages_for_ai.append({"role": "user", "content": "I need help with this question"})
+                help_messages_for_ai.append({"role": "user", "content": f"I need help with this question: {last_question}"})
                 
                 help_response_content = services["ai_service"].get_response(help_messages_for_ai)
                 
-                st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
+                st.session_state.chat_history.append({"role": "user", "content": f"I need help with this question: {last_question}"})
                 st.session_state.chat_history.append({"role": "assistant", "content": help_response_content})
-                st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
+                st.session_state.visible_messages.append({"role": "user", "content": f"I need help with this question: {last_question}"})
                 st.session_state.pending_help = help_response_content
                 st.session_state.help_button_clicked = False
                 st.rerun()
@@ -545,37 +537,15 @@ def main():
                                 st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
                         else:
-                            # Regular response without topic update
+                            # Regular response without topic update - add it directly
                             st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
                             st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
-                            
-                            # Only do additional topic check if no topic update was in the response
-                            topic_check_messages_for_ai = st.session_state.chat_history.copy()
-                            topic_check_messages_for_ai.append({
-                                "role": "user",
-                                "content": (
-                                    "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
-                                    "Based on all conversation so far, which topics have been covered?\n"
-                                    "Respond ONLY with a TOPIC_UPDATE message in JSON format.\n"
-                                    "[END_SYSTEM_INSTRUCTION]"
-                                )
-                            })
-                            
-                            topic_update_response_content = services["ai_service"].get_response(topic_check_messages_for_ai)
-                            services["topic_tracker"].process_topic_update(topic_update_response_content)
                         
+                        # Clean up user info extraction and question tracking
                         if st.session_state.current_question_index == 0:
                             user_info_data = services["ai_service"].extract_user_info(user_input)
                             if user_info_data["name"] or user_info_data["company"]:
                                 st.session_state.user_info = user_info_data
-                                context_message_content = (
-                                    "[SYSTEM_CONTEXT_UPDATE]:\n"
-                                    f"The user's name is {user_info_data['name'] or 'not provided yet'} and "
-                                    f"they work for {user_info_data['company'] or 'a company that has not been mentioned yet'}. "
-                                    "If you know the user's name, address them by it. Do not ask for name or company information again if it has been provided.\n"
-                                    "[END_SYSTEM_CONTEXT_UPDATE]"
-                                )
-                                st.session_state.chat_history.append({"role": "user", "content": context_message_content})
 
                         if st.session_state.current_question_index < len(st.session_state.questions):
                             is_answer = services["ai_service"].check_response_type(st.session_state.current_question, user_input)
@@ -585,7 +555,6 @@ def main():
                                 if st.session_state.current_question_index < len(st.session_state.questions):
                                     st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
                         
-                        services["topic_tracker"].update_ai_context_after_answer(user_input)
                         st.rerun()
 
     with tab2:
