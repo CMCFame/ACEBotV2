@@ -416,6 +416,10 @@ def main():
                     st.success("Completion notification sent!")
                     st.session_state.completion_email_sent = True
         else:
+            # DEBUG: Show we're in regular mode (not summary mode)
+            with st.sidebar:
+                st.write("🔄 In regular conversation mode")
+                
             # Add help/example buttons
             def on_help_click():
                 st.session_state.help_button_clicked = True
@@ -498,6 +502,10 @@ def main():
                 st.write(f"🔍 Debug: Submit: {submit_button}, Input: '{user_input}'")
             
             if user_input:
+                # DEBUG: Show we're processing input
+                with st.sidebar:
+                    st.write(f"🚀 Processing input: '{user_input}'")
+                    
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
                 else:
@@ -534,18 +542,42 @@ def main():
                         st.rerun()
                         
                     else: # Regular input
+                        # DEBUG: Show what we're about to do
+                        with st.sidebar:
+                            st.write(f"🤖 Processing regular input: '{user_input}'")
+                            st.write(f"📝 Current chat history length: {len(st.session_state.chat_history)}")
+                        
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        print(f"DEBUG APP: About to call AI service with {len(st.session_state.chat_history)} messages")
-                        ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
-                        print(f"DEBUG APP: Main AI Response Content: {ai_response_content}")
+                        with st.sidebar:
+                            st.write(f"✅ Added user message, now calling AI...")
+                        
+                        try:
+                            print(f"DEBUG APP: About to call AI service with {len(st.session_state.chat_history)} messages")
+                            ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
+                            print(f"DEBUG APP: Main AI Response Content: {ai_response_content}")
+                            
+                            with st.sidebar:
+                                st.write(f"🎯 AI Response: '{ai_response_content[:50]}...'")
+                                
+                        except Exception as e:
+                            with st.sidebar:
+                                st.error(f"❌ AI Error: {str(e)}")
+                            print(f"DEBUG APP: AI Service Error: {e}")
+                            return
                         
                         is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content)
+                        
+                        with st.sidebar:
+                            st.write(f"📊 Is topic update: {is_topic_update}")
                         
                         if not is_topic_update:
                             st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
                             st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
+                            
+                            with st.sidebar:
+                                st.write(f"✅ Added AI response to messages")
                             
                             # Force a topic update message after each regular response
                             topic_check_messages_for_ai = st.session_state.chat_history.copy()
@@ -568,6 +600,8 @@ def main():
                             services["topic_tracker"].process_topic_update(topic_update_response_content)
                         else:
                             print("DEBUG APP: Main AI response was a TOPIC_UPDATE, no separate topic check needed.")
+                            with st.sidebar:
+                                st.write("📊 Response was a topic update")
                         
                         if st.session_state.current_question_index == 0:
                             user_info_data = services["ai_service"].extract_user_info(user_input)
@@ -591,6 +625,10 @@ def main():
                                     st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
                         
                         services["topic_tracker"].update_ai_context_after_answer(user_input)
+                        
+                        with st.sidebar:
+                            st.write("🔄 About to rerun...")
+                        
                         st.rerun()
 
     with tab2:
