@@ -33,8 +33,6 @@ except ImportError as e:
 # Function to create formatted HTML for examples
 def create_example_html(example_text, question_text):
     """Create formatted HTML for examples and questions."""
-    # This function is primarily for displaying examples requested by the user.
-    # It formats the assistant's output when it includes an example and re-asks the question.
     return f"""
     <div style="display: flex; margin-bottom: 15px;">
       <div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; width: 90%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef;">
@@ -55,7 +53,7 @@ def create_example_html(example_text, question_text):
 def init_services():
     """Initialize the application services."""
     session_manager = SessionManager()
-    ai_service = AIService() # Ensure AIService() doesn't require API key here if handled by secrets/env
+    ai_service = AIService()
     topic_tracker = TopicTracker()
     chat_ui = ChatUI()
     summary_generator = SummaryGenerator()
@@ -83,9 +81,243 @@ except Exception as e:
     st.markdown("""
     <style>
     body { font-family: sans-serif; }
-    /* Add other minimal essential styles if needed */
     </style>
     """, unsafe_allow_html=True)
+
+def check_summary_readiness():
+    """Check if the questionnaire is ready for summary generation."""
+    readiness = services["topic_tracker"].check_summary_readiness()
+    
+    if not readiness["ready"]:
+        # Add a warning message to the user
+        warning_msg = readiness["message"]
+        st.session_state.visible_messages.append({
+            "role": "assistant", 
+            "content": f"I notice you'd like to see a summary, but we haven't finished covering all the necessary topics yet. {warning_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
+        })
+        
+        # Add a system message to guide the AI
+        st.session_state.chat_history.append({
+            "role": "system",
+            "content": f"User requested summary but questionnaire is not complete. {warning_msg} Continue asking questions systematically to cover all missing areas."
+        })
+        
+        return False
+    return True
+
+def handle_summary_request():
+    """Handle when user requests summary or AI indicates completion."""
+    if check_summary_readiness():
+        st.session_state.summary_requested = True
+        return True
+    return False
+
+def add_debug_section():
+    """Add debug section in sidebar for development."""
+    if st.secrets.get("DEBUG_MODE", False):  # Only show in debug mode
+        with st.sidebar:
+            st.markdown("---")
+            st.markdown("### Debug Controls")
+            
+            if st.button("🔍 Debug Q&A Extraction"):
+                summary_gen = services["summary_generator"]
+                qa_pairs = summary_gen._extract_qa_pairs_from_visible_messages()
+                st.write(f"Extracted {len(qa_pairs)} Q&A pairs:")
+                for i, (q, a) in enumerate(qa_pairs, 1):
+                    st.write(f"{i}. Q: {q[:100]}...")
+                    st.write(f"   A: {a[:100]}...")
+            
+            if st.button("📊 Show Topic Coverage"):
+                coverage = st.session_state.get("topic_areas_covered", {})
+                for topic, status in coverage.items():
+                    st.write(f"{topic}: {'✅' if status else '❌'}")
+            
+            if st.button("🔄 Reset Topic Coverage"):
+                services["topic_tracker"].force_topic_reset()
+                st.success("All topics reset to incomplete")
+
+def process_user_input(processed_user_input):
+    """Enhanced user input processing."""
+    
+    # Check for summary request
+    special_message = services["ai_service"].process_special_message_types(processed_user_input)
+    if special_message["type"] == "summary_request":
+        if handle_summary_request():
+            st.rerun()
+        return
+    
+    # Add user message to visible history
+    st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
+    
+    # Create enhanced prompt for the AI
+    guiding_suffix = (
+        "\n\n[SYSTEM_INSTRUCTION: Remember your primary goal is COMPLETE coverage of all 45+ questions "
+        "from the ACE questionnaire checklist. Review which questions you still need to ask. "
+        "Your response MUST follow the MANDATORY TURN STRUCTURE: "
+        "1. Brief acknowledgment of my response "
+        "2. TOPIC_UPDATE JSON if appropriate "
+        "3. Ask the next logical question from your systematic checklist. "
+        "Do not indicate completion until you have covered every single question comprehensively.]"
+    )
+    
+    guided_user_input = processed_user_input + guiding_suffix
+    st.session_state.chat_history.append({"role": "user", "content": guided_user_input})
+    
+    # Get AI response
+    raw_ai_response = services["ai_service"].get_response(st.session_state.chat_history)
+    
+    # Handle SUMMARY_REQUEST
+    if "SUMMARY_REQUEST" in raw_ai_response:
+        if handle_summary_request():
+            # Add the conversation part before the summary request
+            conversation_part = raw_ai_response.split("SUMMARY_REQUEST")[0].strip()
+            if conversation_part:
+                st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
+                st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
+            st.rerun()
+        return
+    
+    # Process TOPIC_UPDATE
+    services["topic_tracker"].process_topic_update(raw_ai_response)
+    
+    # Clean response for display
+    topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}"
+    display_content = re.sub(topic_update_pattern, "", raw_ai_response, flags=re.DOTALL).strip()
+    display_content = "\n".join([line for line in display_content.splitlines() if line.strip()])
+    
+    if display_content:
+        st.session_state.chat_history.append({"role": "assistant", "content": display_content})
+        st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
+    
+    # Force next question if none was asked
+    if not ("?" in display_content):
+        force_next_question()
+    
+    # User info extraction & Question advancement
+    extract_and_update_user_info(processed_user_input)
+    
+    # Update topic tracker context
+    services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
+
+def force_next_question():
+    """Force the AI to ask the next question if it forgot to."""
+    force_question_history = st.session_state.chat_history.copy()
+    force_instruction = (
+        "[CRITICAL SYSTEM TASK] Your previous response did not end with a question. "
+        "Review the Complete Question Coverage Checklist in your instructions. "
+        "Identify which specific question from the 45+ question checklist you need to ask next. "
+        "Respond ONLY with that specific question - no apologies or explanations."
+    )
+    force_question_history.append({"role": "system", "content": force_instruction})
+    next_question = services["ai_service"].get_response(force_question_history, max_tokens=150)
+    
+    if next_question and not next_question.startswith("Error:"):
+        st.session_state.chat_history.append({"role": "assistant", "content": next_question})
+        st.session_state.visible_messages.append({"role": "assistant", "content": next_question})
+    else:
+        # Fallback question
+        fallback = "Could you please provide more details about your callout process?"
+        st.session_state.chat_history.append({"role": "assistant", "content": fallback})
+        st.session_state.visible_messages.append({"role": "assistant", "content": fallback})
+
+def extract_and_update_user_info(user_input):
+    """Extract user info if not already captured."""
+    current_q_idx = st.session_state.get("current_question_index", 0)
+    
+    # Only extract user info if it's not already captured and it's early in the conversation
+    if len(st.session_state.get("responses", [])) == 0 and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
+        user_info_data = services["ai_service"].extract_user_info(user_input)
+        if user_info_data and (user_info_data.get("name") or user_info_data.get("company")):
+            st.session_state.user_info = user_info_data
+            user_context_msg = f"System note: User is {user_info_data.get('name', 'N/A')} from {user_info_data.get('company', 'N/A')}."
+            if not any(m.get("content") == user_context_msg for m in st.session_state.chat_history if m.get("role")=="system"):
+                st.session_state.chat_history.append({"role": "system", "content": user_context_msg})
+    
+    # Update response tracking
+    questions_list = st.session_state.get("questions", [])
+    current_official_question_text = st.session_state.get("current_question", questions_list[0] if questions_list else "")
+    
+    if current_q_idx < len(questions_list) and current_official_question_text:
+        # Use the last AI message shown to user as context for check_response_type
+        last_ai_msg_for_check = ""
+        if st.session_state.visible_messages and st.session_state.visible_messages[-1]['role'] == 'assistant':
+            last_ai_msg_for_check = st.session_state.visible_messages[-1]['content']
+        
+        is_answer = services["ai_service"].check_response_type(last_ai_msg_for_check or current_official_question_text, user_input)
+        
+        if is_answer:
+            st.session_state.responses.append((current_official_question_text, user_input))
+            st.session_state.current_question_index += 1
+            if st.session_state.current_question_index < len(questions_list):
+                st.session_state.current_question = questions_list[st.session_state.current_question_index]
+            else: 
+                # End of official questions list, but don't auto-trigger summary
+                pass
+
+def display_enhanced_completion_ui():
+    """Enhanced completion UI with better summary validation."""
+    if not st.session_state.get("summary_requested", False):
+        return
+    
+    # Check readiness one more time
+    readiness = services["topic_tracker"].check_summary_readiness()
+    
+    if not readiness["ready"]:
+        st.warning(f"Summary requested but questionnaire is not complete: {readiness['message']}")
+        if st.button("Continue Questionnaire"):
+            st.session_state.summary_requested = False
+            st.rerun()
+        return
+    
+    # Generate summary
+    summary_text = services["summary_generator"].generate_conversation_summary()
+    responses_list = services["summary_generator"].get_responses_as_list()
+    
+    # Show completion message
+    st.success("✅ Questionnaire completed successfully!")
+    st.info(f"Captured {len(responses_list)} question-answer pairs covering all major topic areas.")
+    
+    # Display summary in expandable section
+    with st.expander("📋 View Complete Summary", expanded=True):
+        st.text_area("Summary", summary_text, height=400)
+    
+    # Download options
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        csv_data = services["export_service"].generate_csv(responses_list)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv_data,
+            file_name=f"ACE_questionnaire_{st.session_state.user_info.get('company', 'response')}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        st.download_button(
+            label="📄 Download Summary",
+            data=summary_text,
+            file_name=f"ACE_summary_{st.session_state.user_info.get('company', 'response')}_{datetime.now().strftime('%Y%m%d')}.txt",
+            mime="text/plain"
+        )
+    
+    with col3:
+        progress_report = services["summary_generator"].generate_progress_dashboard()
+        st.download_button(
+            label="📊 Download Report", 
+            data=progress_report,
+            file_name=f"ACE_report_{st.session_state.user_info.get('company', 'response')}_{datetime.now().strftime('%Y%m%d')}.md",
+            mime="text/markdown"
+        )
+    
+    # Email notification
+    if not st.session_state.get("completion_email_sent", False):
+        email_result = services["email_service"].send_notification(
+            st.session_state.user_info, responses_list, services["export_service"], completed=True
+        )
+        if email_result["success"]:
+            st.success("📧 Completion notification sent!")
+        st.session_state.completion_email_sent = True
 
 def add_sidebar_ui():
     """Add the sidebar UI elements."""
@@ -125,10 +357,9 @@ def add_sidebar_ui():
                 st.error(result["message"])
         
         if st.button("📊 View Progress Dashboard", key="view_progress_button"): 
-            # Ensure summary_generator can access session state for dashboard data
             dashboard_content = services["summary_generator"].generate_progress_dashboard()
             st.session_state.show_dashboard = True
-            st.session_state.dashboard_content = dashboard_content # Store for display
+            st.session_state.dashboard_content = dashboard_content
             st.rerun()
 
         if st.session_state.get("show_dashboard", False):
@@ -153,7 +384,7 @@ def add_sidebar_ui():
             result = services["session_manager"].restore_session(source="server", session_id=session_id_input)
             if result["success"]:
                 st.success(result["message"])
-                st.session_state.app_initialized_first_run = True # Important: Mark as initialized
+                st.session_state.app_initialized_first_run = True
                 st.rerun()
             else:
                 st.error(result["message"])
@@ -167,27 +398,29 @@ def add_sidebar_ui():
                     result = services["session_manager"].restore_session(source="file", file_data=content)
                     if result["success"]:
                         st.success(result["message"])
-                        st.session_state.app_initialized_first_run = True # Important: Mark as initialized
+                        st.session_state.app_initialized_first_run = True
                         st.rerun()
                     else:
                         st.error(result["message"])
             except Exception as e:
                 st.error(f"Error processing file: {e}")
+        
+        # Add debug section
+        add_debug_section()
 
 def main():
     """Main application function."""
     tab1, tab2, tab3 = st.tabs(["Questionnaire", "Instructions", "FAQ"])
 
     with tab1:
-        # Header, Logo, PII Warning (keep as is)
+        # Header, Logo, PII Warning
         st.markdown("""<div style="text-align: center; margin-bottom: 10px;"><img src="https://www.publicpower.org/sites/default/files/logo-arcos_0.png" alt="ARCOS Logo" style="max-width: 200px; height: auto;" /></div>""", unsafe_allow_html=True)
         st.markdown("""<div style="text-align: center; padding: 10px 0 20px 0;"><h1 style="color: #D22B2B; margin-bottom: 5px;">ACE Questionnaire</h1><p style="color: #555; font-size: 16px;">Help us understand your company's requirements for ARCOS implementation</p></div>""", unsafe_allow_html=True)
-        st.warning("""**IMPORTANT: Data Privacy Notice** Please DO NOT enter any Personal Identifying Information (PII)...""")
+        st.warning("""**IMPORTANT: Data Privacy Notice** Please DO NOT enter any Personal Identifying Information (PII) such as social security numbers, home addresses, personal phone numbers, or other sensitive personal data. Focus on business processes, job roles, and organizational procedures only.""")
         
         # Initialize session state ONCE per session for the very first run
         if not st.session_state.get('app_initialized_first_run', False):
             try:
-                # This initializes chat_history with system_prompt, and visible_messages as empty
                 services["session_manager"]._initialize_session_state() 
                 
                 # On first run, get the AI's welcome message
@@ -195,20 +428,20 @@ def main():
                 initial_ai_response = services["ai_service"].get_response(initial_ai_input_messages)
 
                 if initial_ai_response and not initial_ai_response.startswith("Error:") and not initial_ai_response.startswith("Bedrock client not initialized"):
-                    # The initial response should not contain TOPIC_UPDATE, but clean it just in case
+                    # Clean the initial response
                     topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}"
                     cleaned_initial_response = re.sub(topic_update_pattern, "", initial_ai_response, flags=re.DOTALL).strip()
                     cleaned_initial_response = "\n".join([line for line in cleaned_initial_response.splitlines() if line.strip()])
 
                     if cleaned_initial_response:
-                        st.session_state.chat_history.append({"role": "assistant", "content": cleaned_initial_response}) # Store cleaned
+                        st.session_state.chat_history.append({"role": "assistant", "content": cleaned_initial_response})
                         st.session_state.visible_messages.append({"role": "assistant", "content": cleaned_initial_response})
                 else:
                     st.error(f"Failed to get initial greeting from AI. Details: {initial_ai_response}")
                     st.stop() 
                 
-                st.session_state.app_initialized_first_run = True # Mark that this block has run
-                st.rerun() # Rerun to display the initial AI message
+                st.session_state.app_initialized_first_run = True
+                st.rerun()
 
             except Exception as e:
                 st.error(f"Error during initial application setup: {e}")
@@ -220,35 +453,27 @@ def main():
         if 'help_button_clicked' not in st.session_state: st.session_state.help_button_clicked = False
         if 'example_button_clicked' not in st.session_state: st.session_state.example_button_clicked = False
 
-        # Display chat history (using ChatUI's method is an option, or direct markdown)
+        # Display chat history
         for message in st.session_state.get("visible_messages", []):
             role = message.get("role")
             content = message.get("content","")
             if role == "user":
                 user_label = st.session_state.user_info.get("name", "You") or "You"
                 st.markdown(f"""<div style="display: flex; justify-content: flex-end; margin-bottom: 15px;"><div style="background-color: #e8f4f8; border-radius: 15px 15px 0 15px; padding: 12px 18px; max-width: 80%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #d1e7f0; border-right: 5px solid #4e8cff;"><p style="margin: 0; color: #0d467a; font-weight: 600; font-size: 15px;">{user_label}</p><p style="margin: 5px 0 0 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p></div></div>""", unsafe_allow_html=True)
-            elif role == "assistant": # Handles regular + help/example structure
+            elif role == "assistant":
                 st.markdown(f"""<div style="display: flex; margin-bottom: 15px;"><div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;"><p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p><div style="margin-top: 8px;"><p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p></div></div></div>""", unsafe_allow_html=True)
         
-        # Display pending help or example (these are now rendered as part of visible_messages directly)
-        # The logic for pending_help/example now primarily sets up the AI call and adds to visible_messages.
-
-        current_q_idx = st.session_state.get("current_question_index", 0)
         # Show progress if beyond the very first AI message AND not in summary mode
+        current_q_idx = st.session_state.get("current_question_index", 0)
         if (current_q_idx > 0 or (current_q_idx == 0 and len(st.session_state.get("visible_messages", [])) > 1)) and \
            not st.session_state.get("summary_requested", False):
             progress_data = services["topic_tracker"].get_progress_data()
-            services["chat_ui"].display_progress_bar(progress_data) # Assumes chat_ui has this method
+            services["chat_ui"].display_progress_bar(progress_data)
         
+        # Handle summary mode or active chat
         if st.session_state.get("summary_requested", False):
-            summary_text = services["summary_generator"].generate_conversation_summary()
-            responses_list = services["summary_generator"].get_responses_as_list() # For export
-            services["chat_ui"].display_completion_ui(summary_text, services["export_service"], st.session_state.user_info, responses_list)
-            if st.session_state.get("explicitly_finished", False) and not st.session_state.get("completion_email_sent", False):
-                email_result = services["email_service"].send_notification(st.session_state.user_info, responses_list, services["export_service"], completed=True)
-                if email_result["success"]: st.success("Completion notification sent!")
-                st.session_state.completion_email_sent = True
-        else: # Not in summary mode - active chat
+            display_enhanced_completion_ui()
+        else: # Active chat mode
             def on_help_click(): st.session_state.help_button_clicked = True
             def on_example_click(): st.session_state.example_button_clicked = True
             
@@ -256,10 +481,10 @@ def main():
             with buttons_col1: st.button("Need help?", key="help_button_main_chat", on_click=on_help_click)
             with buttons_col2: st.button("Example", key="example_button_main_chat", on_click=on_example_click)
             
+            # Handle help button click
             if st.session_state.help_button_clicked:
                 st.session_state.help_button_clicked = False 
                 last_question_context = st.session_state.get("current_question", "the current topic")
-                # Try to get a more specific question from the last assistant message if available
                 if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
                      assistant_last_msg = st.session_state.visible_messages[-1]["content"]
                      if "?" in assistant_last_msg: last_question_context = assistant_last_msg
@@ -267,34 +492,30 @@ def main():
                 temp_chat_history = st.session_state.chat_history + [{"role": "user", "content": f"I need help with this question: {last_question_context}"}]
                 help_response_content = services["ai_service"].get_response(temp_chat_history)
                 
-                st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question."}) # User sees generic request
-                st.session_state.visible_messages.append({"role": "assistant", "content": help_response_content}) # Display AI's help
-                st.session_state.chat_history.append({"role": "user", "content": f"I need help with this question: {last_question_context}"}) # Add specific request to history
-                st.session_state.chat_history.append({"role": "assistant", "content": help_response_content}) # Add AI help to history
+                st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question."})
+                st.session_state.visible_messages.append({"role": "assistant", "content": help_response_content})
+                st.session_state.chat_history.append({"role": "user", "content": f"I need help with this question: {last_question_context}"})
+                st.session_state.chat_history.append({"role": "assistant", "content": help_response_content})
                 st.rerun()
             
+            # Handle example button click
             if st.session_state.example_button_clicked:
                 st.session_state.example_button_clicked = False
                 last_question_context = st.session_state.get("current_question", "the current topic")
                 if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
                     assistant_last_msg_content = st.session_state.visible_messages[-1]["content"]
-                    # Extract the question part if "To continue..." is present
                     if "To continue with our question:" in assistant_last_msg_content:
                         last_question_context = assistant_last_msg_content.split("To continue with our question:")[-1].strip()
-                    elif "?" in assistant_last_msg_content: # Otherwise, use the whole message if it's a question
+                    elif "?" in assistant_last_msg_content:
                         last_question_context = assistant_last_msg_content
                 
                 if last_question_context:
                     example_text_content = services["ai_service"].get_example_response(last_question_context)
-                    # This response should be just the example, AI service handles formatting if needed
-                    
-                    # Format for display using create_example_html
                     formatted_example_display = create_example_html(example_text_content, last_question_context)
                     
                     st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
-                    st.session_state.visible_messages.append({"role": "assistant", "content": formatted_example_display}) # Show formatted
+                    st.session_state.visible_messages.append({"role": "assistant", "content": formatted_example_display})
                     
-                    # Add to chat history in a way AI understands for context
                     history_example_text = f"Example: {example_text_content}\n\nTo continue with our question:\n{last_question_context}"
                     st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
                     st.session_state.chat_history.append({"role": "assistant", "content": history_example_text})
@@ -302,6 +523,7 @@ def main():
                 else:
                     st.error("Could not determine the current question to provide an example for.")
 
+            # User input form
             with st.form(key='chat_form_main_input_key', clear_on_submit=True):
                 user_input_val = st.text_input("Your response:", placeholder="Type your response or ask a question...", key="user_response_input_key")
                 submit_button_val = st.form_submit_button("Send")
@@ -312,115 +534,109 @@ def main():
                 if not processed_user_input.strip():
                     st.error("Please enter a message before sending.")
                 else:
-                    st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
-                    guiding_suffix = (
-                        "\n\n[SYSTEM_NOTE_TO_ASSISTANT: Your response to my message above MUST strictly follow the "
-                        "MANDATORY TURN STRUCTURE defined in your initial system prompt. This means: "
-                        "1. Briefly acknowledge my response if appropriate. "
-                        "2. If my response provided substantive information covering a topic, include a TOPIC_UPDATE JSON block on its own line if appropriate. "
-                        "3. CRITICALLY, you MUST then ask the next logical question from the questionnaire guidelines to continue the conversation. "
-                        "Do not stop until the questionnaire is complete or a summary is finalized.]"
-                    )
-                    guided_user_input_for_history = processed_user_input + guiding_suffix
-                    st.session_state.chat_history.append({"role": "user", "content": guided_user_input_for_history})
-                    
-                    raw_ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
-                    
-                    if "SUMMARY_REQUEST" in raw_ai_response_content:
-                        st.session_state.summary_requested = True
-                        conversation_part_before_summary = raw_ai_response_content.split("SUMMARY_REQUEST")[0].strip()
-                        if conversation_part_before_summary:
-                            st.session_state.chat_history.append({"role": "assistant", "content": conversation_part_before_summary})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part_before_summary})
-                        st.session_state.chat_history.append({"role": "system", "content": "[SYSTEM_NOTE] Summary has been requested. Do not ask further questions."})
-                        st.rerun()
-                    else:
-                        services["topic_tracker"].process_topic_update(raw_ai_response_content) 
-                        
-                        topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}" 
-                        display_content = re.sub(topic_update_pattern, "", raw_ai_response_content, flags=re.DOTALL).strip() 
-                        display_content = "\n".join([line for line in display_content.splitlines() if line.strip()])
-
-                        if display_content: 
-                            st.session_state.chat_history.append({"role": "assistant", "content": display_content})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
-                        
-                        question_asked_in_display_content = "?" in display_content
-                        
-                        if not question_asked_in_display_content and not st.session_state.get("summary_requested", False):
-                            force_question_history = st.session_state.chat_history.copy()
-                            # If display_content (the first part of AI's response) wasn't added because it was empty after stripping TOPIC_UPDATE,
-                            # we should ensure the last assistant message in force_question_history is the raw_ai_response_content (or its conversational part)
-                            # so the AI has context for "your previous response".
-                            # This is complex; simpler is to ensure AI knows it needs to ask a new question.
-                            
-                            force_question_instruction = (
-                                "[SYSTEM_TASK] Your previous response did not end with a question. "
-                                "Review the entire conversation history, your main system prompt (especially 'Required Information Checklist' and 'MANDATORY TURN STRUCTURE'), "
-                                "and current topic coverage. Determine and ask the single most relevant next question to continue the questionnaire. "
-                                "Respond ONLY with that question. No apologies or other conversational text."
-                            )
-                            force_question_history.append({"role": "system", "content": force_question_instruction})
-                            next_question_response = services["ai_service"].get_response(force_question_history, max_tokens=200) # Increased tokens slightly for clarity
-                            
-                            if next_question_response and not next_question_response.startswith("Error:"):
-                                # This will be a new assistant message
-                                st.session_state.chat_history.append({"role": "assistant", "content": next_question_response})
-                                st.session_state.visible_messages.append({"role": "assistant", "content": next_question_response})
-                            else:
-                                st.error(f"Assistant failed to provide a follow-up question. Response: {next_question_response}")
-                    
-                    # User info extraction & Question advancement
-                    current_q_idx = st.session_state.get("current_question_index", 0)
-                    questions_list = st.session_state.get("questions", [])
-                    
-                    # Only extract user info if it's not already captured and it's the first real interaction
-                    if len(st.session_state.get("responses", [])) == 0 and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
-                        user_info_data = services["ai_service"].extract_user_info(processed_user_input)
-                        if user_info_data and (user_info_data.get("name") or user_info_data.get("company")):
-                            st.session_state.user_info = user_info_data
-                            user_context_msg = f"System note: User is {user_info_data.get('name', 'N/A')} from {user_info_data.get('company', 'N/A')}."
-                            if not any(m.get("content") == user_context_msg for m in st.session_state.chat_history if m.get("role")=="system"):
-                                st.session_state.chat_history.append({"role": "system", "content": user_context_msg})
-                    
-                    current_official_question_text = st.session_state.get("current_question", questions_list[0] if questions_list else "")
-                    if current_q_idx < len(questions_list) and current_official_question_text:
-                        # Use the last AI message shown to user as context for check_response_type
-                        last_ai_msg_for_check = ""
-                        if st.session_state.visible_messages and st.session_state.visible_messages[-1]['role'] == 'assistant':
-                            last_ai_msg_for_check = st.session_state.visible_messages[-1]['content']
-                        
-                        # If the last AI message was just a forced question, it's more direct
-                        # Otherwise, it might be a longer conversational turn.
-                        is_answer = services["ai_service"].check_response_type(last_ai_msg_for_check or current_official_question_text, processed_user_input)
-                        
-                        if is_answer:
-                            st.session_state.responses.append((current_official_question_text, processed_user_input))
-                            st.session_state.current_question_index += 1
-                            if st.session_state.current_question_index < len(questions_list):
-                                st.session_state.current_question = questions_list[st.session_state.current_question_index]
-                            else: 
-                                st.session_state.summary_requested = True # End of official questions list
-                    
-                    services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
+                    process_user_input(processed_user_input)
                     st.rerun()
 
     with tab2:
         st.markdown("## How to Use the ACE Questionnaire")
-        st.markdown(""" ... (Your existing detailed instructions) ... """)
+        st.markdown("""
+        Welcome to the ACE (ARCOS Configuration Exploration) Questionnaire! This interactive tool is designed to gather comprehensive information about your utility company's callout processes to help configure the ARCOS system for your specific needs.
+
+        ### Getting Started
+        1. **Begin the Conversation**: Simply start by providing your name and company when prompted
+        2. **Answer Questions Thoroughly**: The AI will ask detailed questions about your callout procedures
+        3. **Use Help Features**: If you're unsure about a question, click "Need help?" or "Example" for assistance
+        4. **Save Your Progress**: Use the sidebar to save your session and continue later if needed
+
+        ### What Information We Collect
+        The questionnaire covers all essential aspects of your callout process:
+        - **Basic Information**: Company details and callout types
+        - **Staffing Details**: Number and roles of employees needed
+        - **Contact Process**: Who you call first and communication methods
+        - **List Management**: How you organize and traverse callout lists
+        - **Insufficient Staffing**: Procedures when you can't fill all positions
+        - **Calling Logistics**: Simultaneous calling and conditional responses
+        - **List Changes**: How your lists update over time
+        - **Tiebreakers**: Methods for breaking ties in overtime assignments
+        - **Additional Rules**: Special scheduling and exception rules
+
+        ### Tips for Success
+        - **Be Specific**: Detailed answers help us configure ARCOS accurately
+        - **Think Through Scenarios**: Consider different types of callouts you handle
+        - **Include Variations**: Mention any exceptions or special procedures
+        - **Ask for Examples**: Use the Example button to see what kind of detail we're looking for
+
+        ### Privacy and Security
+        - Do not include any Personal Identifying Information (PII)
+        - Focus on business processes and organizational procedures
+        - All data is used solely for ARCOS configuration purposes
+
+        ### Completion and Next Steps
+        Once all topics are covered, you'll receive:
+        - A comprehensive summary of your responses
+        - Downloadable files in multiple formats (CSV, text, detailed report)
+        - Email notification to your implementation team (if configured)
+
+        The information you provide will be used by ARCOS solution consultants to configure the system according to your specific union agreements, business rules, and operational procedures.
+        """)
     
     with tab3:
         st.markdown("## Frequently Asked Questions")
-        # Populate with your FAQ content using st.expander
-        with st.expander("What is the ACE Questionnaire?"): st.write("The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes...")
-        with st.expander("How long does it take to complete?"): st.write("Typically 15-20 minutes, but you can save and resume.")
-        # ... Add other FAQs from your previous app.py version ...
+        
+        with st.expander("What is the ACE Questionnaire?"):
+            st.write("""
+            The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes. This information is essential for properly configuring the ARCOS resource management system to match your specific operational needs, union agreements, and business rules.
+            """)
+        
+        with st.expander("How long does it take to complete?"):
+            st.write("""
+            The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your callout processes. However, you can save your progress at any time and return to complete it later. The system will remember where you left off.
+            """)
+        
+        with st.expander("What if I don't know an answer to a specific question?"):
+            st.write("""
+            If you're unsure about a question:
+            1. Click the "Need help?" button for an explanation of what we're looking for
+            2. Click the "Example" button to see a sample answer from a similar utility
+            3. You can also consult with colleagues and return to complete the questionnaire later
+            4. If a question doesn't apply to your operation, simply explain that in your response
+            """)
+        
+        with st.expander("Is my information secure?"):
+            st.write("""
+            Yes, your information is handled securely and used only for ARCOS configuration purposes. We do not store Personal Identifying Information (PII). Please focus on business processes and avoid including personal data like social security numbers or home addresses.
+            """)
+        
+        with st.expander("Can I save and resume my progress?"):
+            st.write("""
+            Absolutely! Use the "Save Progress" button in the sidebar to save your session. You'll receive a Session ID that you can use to resume later, or you can download a progress file. Your session includes all your previous responses and conversation history.
+            """)
+        
+        with st.expander("What happens after I complete the questionnaire?"):
+            st.write("""
+            Once completed, you'll receive:
+            - A comprehensive summary of all your responses
+            - Downloadable files in multiple formats (CSV, text, detailed report)
+            - An email notification will be sent to your ARCOS implementation team
+            
+            Your implementation consultant will use this information to configure ARCOS according to your specific requirements.
+            """)
+        
+        with st.expander("What if our processes change after completing the questionnaire?"):
+            st.write("""
+            You can run through the questionnaire again at any time to capture changes in your processes. It's also helpful to inform your ARCOS implementation consultant of any significant changes to your callout procedures after the initial configuration.
+            """)
+        
+        with st.expander("Do I need to complete this all at once?"):
+            st.write("""
+            No, you can save your progress and return later. The questionnaire is designed to be flexible. You might also want to gather input from different team members (dispatchers, supervisors, union representatives) before providing comprehensive answers.
+            """)
 
+# Add sidebar UI
 add_sidebar_ui()
 
 if __name__ == "__main__":
-    # Ensure necessary session state keys for questions/instructions are loaded if not already present
-    # This is a fallback, primary loading should be within _initialize_session_state
+    # Ensure necessary session state keys for questions/instructions are loaded
     if 'questions' not in st.session_state:
         try: st.session_state.questions = load_questions('data/questions.txt')
         except: st.session_state.questions = []

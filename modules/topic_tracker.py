@@ -13,7 +13,7 @@ class TopicTracker:
     
     def process_topic_update(self, message_content):
         """
-        Process topic update messages from the AI.
+        Process topic update messages from the AI with more validation.
         Returns True if the message was a topic update, False otherwise.
         """
         if "TOPIC_UPDATE:" not in message_content:
@@ -30,11 +30,15 @@ class TopicTracker:
             
             topic_updates = json.loads(json_str)
             
-            # Update the session state
-            for topic, status in topic_updates.items():
+            # Validate updates before applying them
+            validated_updates = self._validate_topic_updates(topic_updates)
+            
+            # Update the session state with validated updates only
+            for topic, status in validated_updates.items():
                 if topic in st.session_state.topic_areas_covered:
+                    old_status = st.session_state.topic_areas_covered[topic]
                     st.session_state.topic_areas_covered[topic] = status
-                    print(f"Updated topic {topic} to {status}")
+                    print(f"Updated topic {topic} from {old_status} to {status}")
             
             # After updating topics, check for completion
             self._check_completion_status()
@@ -45,8 +49,80 @@ class TopicTracker:
             return True
         except Exception as e:
             print(f"Error processing topic update: {e}")
-            # If there's an error, still return True to avoid displaying the message
-            return True
+            return True  # Still return True to hide the malformed update
+    
+    def _validate_topic_updates(self, topic_updates):
+        """
+        Validate topic updates to ensure they're not prematurely marked complete.
+        Only mark a topic complete if we have substantial evidence.
+        """
+        validated = {}
+        conversation_text = self._get_conversation_text()
+        
+        for topic, status in topic_updates.items():
+            if not status:  # If marking as incomplete, allow it
+                validated[topic] = status
+                continue
+                
+            # For marking as complete, validate we have sufficient coverage
+            if self._has_sufficient_coverage(topic, conversation_text):
+                validated[topic] = status
+            else:
+                print(f"Rejecting premature completion of topic {topic}")
+                # Keep current status instead of updating
+                validated[topic] = st.session_state.topic_areas_covered.get(topic, False)
+        
+        return validated
+    
+    def _has_sufficient_coverage(self, topic, conversation_text):
+        """
+        Check if a topic has sufficient coverage to be marked complete.
+        """
+        # Define minimum requirements for each topic
+        requirements = {
+            "basic_info": ["name", "company", ("callout" or "situation" or "type")],
+            "staffing_details": ["employee", "staff", "number", ("role" or "classification")],
+            "contact_process": ["call first", "contact", "device", "why"],
+            "list_management": ["list", ("straight" or "skip" or "order"), "based on"],
+            "insufficient_staffing": ["required number", ("different list" or "whole list" or "not enough")],
+            "calling_logistics": ["simultaneous", ("same time" or "call again")],
+            "list_changes": ["change", ("over time" or "update")],
+            "tiebreakers": ["tie", ("overtime" or "seniority")],
+            "additional_rules": [("email" or "text"), ("rule" or "prevent" or "excuse")]
+        }
+        
+        if topic not in requirements:
+            return True  # Unknown topic, allow it
+        
+        required_terms = requirements[topic]
+        found_terms = 0
+        
+        for term in required_terms:
+            if isinstance(term, tuple):
+                # OR condition - any of the terms in the tuple
+                if any(t in conversation_text for t in term):
+                    found_terms += 1
+            else:
+                # Single term
+                if term in conversation_text:
+                    found_terms += 1
+        
+        # Require at least 60% of terms to be present
+        coverage_ratio = found_terms / len(required_terms)
+        return coverage_ratio >= 0.6
+    
+    def _get_conversation_text(self):
+        """Get all conversation text for analysis."""
+        messages = st.session_state.get("visible_messages", [])
+        text_parts = []
+        
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("content"):
+                # Clean HTML and get plain text
+                content = re.sub(r'<[^>]+>', '', str(msg["content"]))
+                text_parts.append(content.lower())
+        
+        return " ".join(text_parts)
     
     def _check_completion_status(self):
         """Check if all topics are covered and trigger appropriate actions."""
@@ -54,25 +130,30 @@ class TopicTracker:
         covered_count = sum(st.session_state.topic_areas_covered.values())
         total_topics = len(st.session_state.topic_areas_covered)
         
-        # If we're near completion (7+ topics covered), check for missing topics
-        if covered_count >= 7:
+        print(f"Topic coverage: {covered_count}/{total_topics}")
+        
+        # Only warn about missing topics if we're at 70%+ completion
+        if covered_count >= (total_topics * 0.7):
             missing_topics = [t for t, v in st.session_state.topic_areas_covered.items() if not v]
             if missing_topics:
                 # Add system message to explicitly ask about missing topics
                 missing_topics_str = ", ".join([TOPIC_AREAS[t] for t in missing_topics])
-                st.session_state.chat_history.append({
+                system_message = {
                     "role": "system",
-                    "content": f"IMPORTANT: The following topics have not been covered yet: {missing_topics_str}. Focus your next questions specifically on these topics until all are covered."
-                })
-                print(f"Added system message about missing topics: {missing_topics_str}")
+                    "content": f"IMPORTANT: The following topics have not been fully covered yet: {missing_topics_str}. "
+                               f"Before concluding the questionnaire, ensure you ask specific questions about these topics. "
+                               f"Do not consider the questionnaire complete until ALL topics are thoroughly covered."
+                }
+                
+                # Only add if not already present
+                recent_messages = st.session_state.chat_history[-3:] if len(st.session_state.chat_history) >= 3 else st.session_state.chat_history
+                if not any("following topics have not been fully covered" in msg.get("content", "") for msg in recent_messages):
+                    st.session_state.chat_history.append(system_message)
+                    print(f"Added system message about missing topics: {missing_topics_str}")
     
     def _check_critical_questions(self):
         """Check if critical questions for covered topics have been asked."""
-        # Get all conversation text
-        conversation_text = " ".join([
-            msg.get("content", "") for msg in st.session_state.chat_history 
-            if isinstance(msg, dict) and msg.get("role") in ["assistant", "user"]
-        ]).lower()
+        conversation_text = self._get_conversation_text()
         
         # Check each covered topic for its critical questions
         for topic, is_covered in st.session_state.topic_areas_covered.items():
@@ -80,22 +161,33 @@ class TopicTracker:
                 missing_questions = []
                 
                 for question in CRITICAL_QUESTIONS[topic]:
-                    # Check if this critical question has been asked
-                    if question.lower() not in conversation_text:
+                    # More flexible matching for critical questions
+                    question_words = question.lower().split()
+                    # Check if most key words from the question appear in conversation
+                    matches = sum(1 for word in question_words if len(word) > 3 and word in conversation_text)
+                    
+                    if matches < len(question_words) * 0.5:  # Less than 50% of words found
                         missing_questions.append(question)
                 
                 if missing_questions:
                     # Add a system message to ask these questions
-                    question_str = ", ".join(missing_questions)
-                    st.session_state.chat_history.append({
+                    question_str = "; ".join(missing_questions[:2])  # Limit to avoid overwhelming
+                    system_message = {
                         "role": "system",
-                        "content": f"IMPORTANT: Although the {TOPIC_AREAS[topic]} topic is marked as covered, you have not specifically asked about: {question_str}. Please ask about these points before moving to other topics."
-                    })
+                        "content": f"CRITICAL: For the {TOPIC_AREAS[topic]} topic, you must still ask about: {question_str}. "
+                                   f"Ask these specific questions before considering this topic complete."
+                    }
+                    
+                    # Only add if not recently added
+                    recent_messages = st.session_state.chat_history[-2:] if len(st.session_state.chat_history) >= 2 else st.session_state.chat_history
+                    if not any(question_str[:20] in msg.get("content", "") for msg in recent_messages):
+                        st.session_state.chat_history.append(system_message)
+                        print(f"Added system message about missing critical questions for {topic}")
     
     def check_summary_readiness(self):
         """
         Check if the questionnaire is ready for summary generation.
-        Returns dict with readiness status and any missing topics/questions.
+        More strict validation before allowing summary.
         """
         # Check if all topics are covered
         all_topics_covered = all(st.session_state.topic_areas_covered.values())
@@ -108,35 +200,38 @@ class TopicTracker:
                 "message": f"The following topics still need to be covered: {', '.join(missing_topics)}"
             }
         
-        # Check for missing critical questions
-        conversation_text = " ".join([
-            msg.get("content", "") for msg in st.session_state.chat_history 
-            if isinstance(msg, dict) and msg.get("role") in ["assistant", "user"]
-        ]).lower()
+        # Check minimum number of Q&A pairs
+        from modules.summary import SummaryGenerator
+        summary_gen = SummaryGenerator()
+        qa_pairs = summary_gen._extract_qa_pairs_from_visible_messages()
         
-        missing_critical_questions = []
-        
-        # Key phrases that should appear in a complete conversation
-        key_phrases = [
-            "why do you call first", "how many devices", "which device is called first",
-            "attributes other than job classification", "straight down the list", "skip around",
-            "pauses between calls", "offer positions to people not normally", "call the whole list again",
-            "always handle insufficient staffing", "situations where you handle differently",
-            "rules that excuse declined callouts"
-        ]
-        
-        for phrase in key_phrases:
-            if phrase not in conversation_text:
-                missing_critical_questions.append(phrase)
-        
-        if missing_critical_questions:
+        if len(qa_pairs) < 15:  # Minimum threshold
             return {
                 "ready": False,
-                "missing_questions": missing_critical_questions,
-                "message": f"The following important points still need to be addressed: {', '.join(missing_critical_questions)}"
+                "message": f"Only {len(qa_pairs)} questions have been answered. Need more comprehensive coverage before generating summary."
             }
         
-        # All topics and critical questions covered
+        # Check for critical question coverage
+        conversation_text = self._get_conversation_text()
+        missing_critical = []
+        
+        for topic, questions in CRITICAL_QUESTIONS.items():
+            if st.session_state.topic_areas_covered.get(topic, False):
+                for question in questions:
+                    question_words = question.lower().split()
+                    matches = sum(1 for word in question_words if len(word) > 3 and word in conversation_text)
+                    
+                    if matches < len(question_words) * 0.4:
+                        missing_critical.append(f"{TOPIC_AREAS[topic]}: {question}")
+        
+        if missing_critical:
+            return {
+                "ready": False,
+                "missing_questions": missing_critical[:5],  # Show first 5
+                "message": f"Critical questions still need to be addressed: {'; '.join(missing_critical[:3])}"
+            }
+        
+        # All checks passed
         return {
             "ready": True,
             "message": "All topics and critical questions have been covered. Ready for summary."
@@ -160,152 +255,16 @@ class TopicTracker:
             "covered_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if v],
             "missing_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
         }
-        
-    def verify_question_coverage(self):
-        """Verify which specific questions have been answered."""
-        # Get all responses from the summary generator
-        from modules.summary import SummaryGenerator
-        summary_gen = SummaryGenerator()
-        responses = summary_gen.get_responses_as_list()
-        conversation_insights = summary_gen._extract_insights_from_conversation()
-        
-        # Create a mapping of questions to answers
-        question_answer_map = {}
-        
-        # Add explicitly tracked responses
-        for question, answer in responses:
-            clean_question = summary_gen._normalize_question(question)
-            question_answer_map[clean_question] = answer
-        
-        # Add conversation insights
-        for question, answer in conversation_insights.items():
-            if question not in question_answer_map:
-                question_answer_map[question] = answer
-        
-        # Count answered questions for each topic
-        topic_question_coverage = {topic: 0 for topic in TOPIC_AREAS.keys()}
-        topic_question_total = {topic: 0 for topic in TOPIC_AREAS.keys()}
-        
-        # Map questions to topics
-        question_to_topic = {
-            "name and company": "basic_info",
-            "situation": "basic_info",
-            "employees required": "staffing_details",
-            "roles": "staffing_details",
-            "call first": "contact_process",
-            "devices": "contact_process",
-            "device first": "contact_process",
-            "same list": "list_management",
-            "lists total": "list_management",
-            "job classification": "list_management",
-            "call this list": "list_management",
-            "straight down": "list_management",
-            "skip around": "list_management",
-            "pauses": "list_management",
-            "required number": "insufficient_staffing",
-            "different list": "insufficient_staffing",
-            "different location": "insufficient_staffing",
-            "offer position": "insufficient_staffing",
-            "whole list again": "insufficient_staffing",
-            "do differently": "insufficient_staffing",
-            "simultaneously": "calling_logistics",
-            "no but call again": "calling_logistics",
-            "first pass": "calling_logistics",
-            "change over time": "list_changes",
-            "when change": "list_changes",
-            "content change": "list_changes",
-            "tie breakers": "tiebreakers",
-            "email or text": "additional_rules",
-            "prevent called": "additional_rules",
-            "excuse declined": "additional_rules",
-        }
-        
-        # Count questions by topic
-        for question in st.session_state.questions:
-            normalized = summary_gen._normalize_question(question)
-            topic = None
-            
-            # Find matching topic
-            for key, topic_name in question_to_topic.items():
-                if key in normalized:
-                    topic = topic_name
-                    break
-            
-            if topic:
-                topic_question_total[topic] += 1
-                if normalized in question_answer_map:
-                    topic_question_coverage[topic] += 1
-        
-        # Calculate coverage percentages
-        coverage_results = {}
-        for topic, covered in topic_question_coverage.items():
-            total = topic_question_total[topic] or 1  # Avoid division by zero
-            coverage_results[topic] = {
-                "covered": covered,
-                "total": total,
-                "percentage": int((covered / total) * 100)
-            }
-        
-        return coverage_results
-        
-    def update_ai_context_after_answer(self, user_input):
-        """Update AI context after each user answer to prevent circular questioning."""
-        # Analyze the last few messages to determine what question was just answered
-        if len(st.session_state.visible_messages) >= 2:
-            last_msg = st.session_state.visible_messages[-1]  # User's answer
-            prev_msg = st.session_state.visible_messages[-2]  # Assistant's question
-            
-            if last_msg["role"] == "user" and prev_msg["role"] == "assistant":
-                # Check if this is a substantive answer (not just asking for an example)
-                if last_msg["content"].lower().strip() not in ["example", "can you show me an example?", "show example"]:
-                    # Extract the question from the assistant's message
-                    question_asked = ""
-                    for sentence in prev_msg["content"].split(". "):
-                        if "?" in sentence:
-                            question_asked = sentence.strip() + "?"
-                            break
-                    
-                    if question_asked:
-                        # Check which of our original questions this might be
-                        matched_questions = []
-                        for i, q in enumerate(st.session_state.questions):
-                            # Simple word overlap check
-                            q_words = set(q.lower().split())
-                            asked_words = set(question_asked.lower().split())
-                            if len(q_words.intersection(asked_words)) / max(len(q_words), 1) > 0.3:
-                                matched_questions.append(i)
-                        
-                        # Add context message to avoid asking this question again
-                        if matched_questions:
-                            question_info = ", ".join([f"question {i+1}" for i in matched_questions])
-                            context_msg = {
-                                "role": "system",
-                                "content": f"The user has just answered {question_info} with: '{last_msg['content']}'. Do not ask this question again."
-                            }
-                            st.session_state.chat_history.append(context_msg)
-                            
-                            # Also check if this completes a topic
-                            self._update_topic_coverage_from_answer(question_asked, last_msg["content"])
     
-    def _update_topic_coverage_from_answer(self, question, answer):
-        """Update topic coverage based on answers to key questions."""
-        combined_text = (question + " " + answer).lower()
-        
-        # Map of key phrases to topics they complete
-        completion_phrases = {
-            "contact first": "contact_process",
-            "devices have": "contact_process", 
-            "call straight down": "list_management",
-            "skip those who are on": "list_management",
-            "call neighboring district": "insufficient_staffing",
-            "call all devices simultaneously": "calling_logistics",
-            "lists update": "list_changes",
-            "seniority is used as": "tiebreakers",
-            "hours of rest": "additional_rules"
-        }
-        
-        # Check for completion phrases
-        for phrase, topic in completion_phrases.items():
-            if phrase in combined_text:
-                if topic in st.session_state.topic_areas_covered:
-                    st.session_state.topic_areas_covered[topic] = True
+    def force_topic_reset(self):
+        """Force reset of all topics to incomplete - for debugging."""
+        for topic in st.session_state.topic_areas_covered:
+            st.session_state.topic_areas_covered[topic] = False
+        print("All topics reset to incomplete")
+    
+    def manual_topic_update(self, topic_updates):
+        """Manually update topic coverage - for debugging."""
+        for topic, status in topic_updates.items():
+            if topic in st.session_state.topic_areas_covered:
+                st.session_state.topic_areas_covered[topic] = status
+                print(f"Manually updated {topic} to {status}")
