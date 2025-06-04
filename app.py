@@ -197,7 +197,10 @@ def process_user_input(processed_user_input):
     extract_and_update_user_info(processed_user_input)
     
     # Update topic tracker context
-    services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
+    try:
+        services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
+    except Exception as e:
+        print(f"Warning: Error in topic tracker context update: {e}")
 
 def force_next_question():
     """Force the AI to ask the next question if it forgot to."""
