@@ -1,4 +1,3 @@
-# modules/ai_service.py - Fixed version for ACEBotV2
 import boto3
 import streamlit as st
 import json
@@ -50,7 +49,7 @@ class AIService:
         else:
             remaining_messages = messages
         
-        # Process remaining messages, ensuring proper alternating user/assistant pattern
+        # Process remaining messages - FIXED: ensure proper alternating pattern
         last_role = None
         for msg in remaining_messages:
             if not isinstance(msg, dict):
@@ -64,24 +63,28 @@ class AIService:
                 continue
                 
             if role in ["user", "assistant"]:
-                # Ensure alternating pattern - if same role appears twice, skip the duplicate
+                # FIXED: Ensure alternating pattern but don't drop valid messages
                 if role != last_role:
                     chat_messages.append({"role": role, "content": content.strip()})
                     last_role = role
+                else:
+                    # If same role appears twice, combine the content
+                    if chat_messages:
+                        chat_messages[-1]["content"] += "\n\n" + content.strip()
             elif role == "system":
-                # Convert additional system messages to user messages
+                # Convert additional system messages to user messages if needed
                 if content.strip() and last_role != "user":
-                    chat_messages.append({"role": "user", "content": f"[System note: {content.strip()}]"})
+                    chat_messages.append({"role": "user", "content": f"[Context: {content.strip()}]"})
                     last_role = "user"
         
-        # Ensure the conversation ends with a user message for Claude
+        # FIXED: Ensure conversation ends with user message
         if chat_messages and chat_messages[-1]["role"] == "assistant":
             chat_messages.append({"role": "user", "content": "Please continue."})
         
         return system_prompt, chat_messages
 
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
-        """Get a response from the Bedrock API using Claude."""
+        """Get a response from the Bedrock API using Claude - KEEPING ORIGINAL WORKING VERSION."""
         if not self.client:
             return "Bedrock client not initialized. Please check AWS credentials configuration."
 
@@ -189,26 +192,36 @@ class AIService:
         return {"type": "regular_input"}
 
     def get_example_response(self, last_question):
-        """Get a simple example response using Claude - matching V3 behavior."""
+        """FIXED: Get clean example response that matches V3 format."""
         if not last_question:
             return "Unable to provide example - no question found."
             
-        # Simplified approach matching V3
+        # FIXED: More specific instructions to prevent HTML output
         messages = [
-            {"role": "user", "content": f"Provide a brief example answer for this utility company question: {last_question}\n\nProvide ONLY the example text - no explanations, no HTML, no formatting. Just a simple example answer in 1-2 sentences."}
+            {"role": "user", "content": f"For this utility company question: '{last_question}'\n\nProvide ONLY a brief example answer. No explanations, no HTML tags, no markdown, no prefixes. Just the plain text example answer in 1-2 sentences."}
         ]
 
         try:
-            example_response = self.get_response(messages, max_tokens=100, temperature=0.5)
+            example_response = self.get_response(messages, max_tokens=80, temperature=0.5)
             
-            # Simple cleanup - remove any prefixes
+            # FIXED: Clean up any unwanted formatting
             example_response = example_response.strip()
-            prefixes = ["Example:", "Here's an example:", "For example:", "An example would be:"]
-            for prefix in prefixes:
-                if example_response.startswith(prefix):
+            
+            # Remove common prefixes that Claude might add
+            prefixes_to_remove = [
+                "Example:", "Here's an example:", "For example:", "An example would be:", 
+                "Sample answer:", "Example answer:", "Response:", "Answer:", 
+                "*Example:", "**Example:", "<example>", "</example>"
+            ]
+            
+            for prefix in prefixes_to_remove:
+                if example_response.lower().startswith(prefix.lower()):
                     example_response = example_response[len(prefix):].strip()
             
-            return example_response if example_response else "We respond to emergency situations requiring immediate crew dispatch."
+            # Remove any remaining asterisks or HTML-like tags
+            example_response = example_response.replace("*", "").replace("<", "").replace(">", "")
+            
+            return example_response if example_response else "My name is John Smith and I work for ABC Electric Utility."
             
         except Exception as e:
-            return "We respond to emergency situations requiring immediate crew dispatch."
+            return "My name is John Smith and I work for ABC Electric Utility."

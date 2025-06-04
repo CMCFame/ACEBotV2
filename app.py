@@ -1,4 +1,4 @@
-# app.py - Fixed version for ACEBotV2
+# app.py - Fixed version for ACEBotV2 with targeted fixes only
 # IMPORTANT: set_page_config must be the very first Streamlit command!
 import streamlit as st
 
@@ -13,6 +13,7 @@ st.set_page_config(
 import os
 import json
 from datetime import datetime
+import re
 
 # Continue with other imports
 try:
@@ -58,84 +59,6 @@ try:
     apply_css(css_content)
 except Exception as e:
     st.warning(f"Could not load CSS: {e}. Using default styling.")
-
-def handle_help_request():
-    """Handle help button clicks - simplified approach matching V3."""
-    try:
-        # Find the last question asked
-        last_question = None
-        for msg in reversed(st.session_state.visible_messages):
-            if msg["role"] == "assistant" and "?" in msg["content"]:
-                # Extract the question part
-                content = msg["content"]
-                if "?" in content:
-                    sentences = content.split(".")
-                    for sentence in reversed(sentences):
-                        if "?" in sentence:
-                            last_question = sentence.strip()
-                            break
-                break
-        
-        if not last_question:
-            st.error("Could not find a question to provide help for.")
-            return
-        
-        # Simple help request - similar to V3
-        help_messages = [
-            {"role": "user", "content": f"I need help understanding this question: {last_question}\n\nPlease explain what information you're looking for in simple terms."}
-        ]
-        
-        help_response = services["ai_service"].get_response(help_messages)
-        
-        if help_response and not help_response.startswith("Error"):
-            # Add to conversation history
-            st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
-            st.session_state.chat_history.append({"role": "assistant", "content": help_response})
-            st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
-            st.session_state.visible_messages.append({"role": "assistant", "content": help_response})
-        else:
-            st.error("Could not get help response. Please try again.")
-            
-    except Exception as e:
-        st.error(f"Error processing help request: {e}")
-
-def handle_example_request():
-    """Handle example button clicks - simplified approach matching V3."""
-    try:
-        # Find the last question asked
-        last_question = None
-        for msg in reversed(st.session_state.visible_messages):
-            if msg["role"] == "assistant" and "?" in msg["content"]:
-                content = msg["content"]
-                if "?" in content:
-                    sentences = content.split(".")
-                    for sentence in reversed(sentences):
-                        if "?" in sentence:
-                            last_question = sentence.strip()
-                            break
-                break
-        
-        if not last_question:
-            st.error("Could not find a question to provide an example for.")
-            return
-        
-        # Get example response
-        example_text = services["ai_service"].get_example_response(last_question)
-        
-        if example_text and not example_text.startswith("Error"):
-            # Format example properly for display - matching V3 format
-            full_example_content = f"*Example: {example_text}*\n\nTo continue with our question:\n{last_question}"
-            
-            # Add to conversation history
-            st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
-            st.session_state.chat_history.append({"role": "assistant", "content": full_example_content})
-            st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
-            st.session_state.visible_messages.append({"role": "assistant", "content": full_example_content})
-        else:
-            st.error("Could not get example response. Please try again.")
-            
-    except Exception as e:
-        st.error(f"Error processing example request: {e}")
 
 def add_sidebar_ui():
     """Add the sidebar UI elements."""
@@ -302,15 +225,84 @@ def main():
             # Add help/example buttons
             buttons_col1, buttons_col2 = st.columns(2)
             
+            # FIXED: Help button handling
             with buttons_col1:
                 if st.button("Need help?", key="help_button"):
-                    handle_help_request()
-                    st.rerun()
+                    try:
+                        # Find the last question asked
+                        last_question = "Could you please provide your name and your company name?"  # Default
+                        for msg in reversed(st.session_state.visible_messages):
+                            if msg["role"] == "assistant" and "?" in msg["content"]:
+                                # Extract just the question part
+                                content = msg["content"]
+                                sentences = content.split(".")
+                                for sentence in reversed(sentences):
+                                    if "?" in sentence:
+                                        last_question = sentence.strip()
+                                        break
+                                break
+                        
+                        # FIXED: Simple help request that produces clean text
+                        help_messages = [
+                            {"role": "user", "content": f"Explain what information you're looking for with this question: {last_question}\n\nProvide a clear, helpful explanation in plain text with no HTML or special formatting."}
+                        ]
+                        
+                        help_response = services["ai_service"].get_response(help_messages)
+                        
+                        # FIXED: Clean the response to remove any HTML
+                        if help_response:
+                            # Remove any HTML tags that might have slipped through
+                            help_response = re.sub(r'<[^>]+>', '', help_response)
+                            help_response = help_response.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                            
+                            # Add to conversation
+                            st.session_state.chat_history.append({"role": "user", "content": "I need help with this question"})
+                            st.session_state.chat_history.append({"role": "assistant", "content": help_response})
+                            st.session_state.visible_messages.append({"role": "user", "content": "I need help with this question"})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": help_response})
+                            
+                            st.rerun()
+                        else:
+                            st.error("Could not get help response. Please try again.")
+                            
+                    except Exception as e:
+                        st.error(f"Error processing help request: {e}")
             
+            # FIXED: Example button handling  
             with buttons_col2:
                 if st.button("Example", key="example_button"):
-                    handle_example_request()
-                    st.rerun()
+                    try:
+                        # Find the last question asked
+                        last_question = "Could you please provide your name and your company name?"  # Default
+                        for msg in reversed(st.session_state.visible_messages):
+                            if msg["role"] == "assistant" and "?" in msg["content"]:
+                                content = msg["content"]
+                                sentences = content.split(".")
+                                for sentence in reversed(sentences):
+                                    if "?" in sentence:
+                                        last_question = sentence.strip()
+                                        break
+                                break
+                        
+                        # FIXED: Get clean example text
+                        example_text = services["ai_service"].get_example_response(last_question)
+                        
+                        if example_text:
+                            # FIXED: Format exactly like V3 does
+                            full_example_content = f"*Example: {example_text}*\n\nTo continue with our question:\n{last_question}"
+                            
+                            # Add to conversation
+                            st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
+                            st.session_state.chat_history.append({"role": "assistant", "content": full_example_content})
+                            st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": full_example_content})
+                            
+                            st.rerun()
+                        else:
+                            st.error("Could not get example response. Please try again.")
+                            
+                    except Exception as e:
+                        st.error(f"Error processing example request: {e}")
             
             # User input form
             user_input = services["chat_ui"].add_input_form()
@@ -322,15 +314,61 @@ def main():
                     # Process the user input
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
+                    # FIXED: Handle inline example requests
                     if message_type["type"] == "example_request":
-                        # Handle inline example requests
-                        handle_example_request()
+                        # Find the last question
+                        last_question = "Could you please provide your name and your company name?"
+                        for msg in reversed(st.session_state.visible_messages):
+                            if msg["role"] == "assistant" and "?" in msg["content"]:
+                                content = msg["content"]
+                                sentences = content.split(".")
+                                for sentence in reversed(sentences):
+                                    if "?" in sentence:
+                                        last_question = sentence.strip()
+                                        break
+                                break
+                        
+                        # Get clean example
+                        example_text = services["ai_service"].get_example_response(last_question)
+                        
+                        # Format like V3
+                        full_example_content = f"*Example: {example_text}*\n\nTo continue with our question:\n{last_question}"
+                        
+                        # Add to conversation
+                        st.session_state.chat_history.append({"role": "user", "content": user_input})
+                        st.session_state.chat_history.append({"role": "assistant", "content": full_example_content})
+                        st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                        st.session_state.visible_messages.append({"role": "assistant", "content": full_example_content})
+                        
                         st.rerun()
                         
+                    # FIXED: Handle inline help requests
                     elif message_type["type"] == "help_request":
-                        # Handle inline help requests
-                        handle_help_request() 
-                        st.rerun()
+                        # Find the last question
+                        last_question = "Could you please provide your name and your company name?"
+                        for msg in reversed(st.session_state.visible_messages):
+                            if msg["role"] == "assistant" and "?" in msg["content"]:
+                                last_question = msg["content"]
+                                break
+                        
+                        # Get clean help response
+                        help_messages = [
+                            {"role": "user", "content": f"Explain what information you're looking for with this question: {last_question}\n\nProvide a clear, helpful explanation in plain text."}
+                        ]
+                        
+                        help_response = services["ai_service"].get_response(help_messages)
+                        
+                        # Clean any HTML
+                        if help_response:
+                            help_response = re.sub(r'<[^>]+>', '', help_response)
+                            
+                            # Add to conversation
+                            st.session_state.chat_history.append({"role": "user", "content": user_input})
+                            st.session_state.chat_history.append({"role": "assistant", "content": help_response})
+                            st.session_state.visible_messages.append({"role": "user", "content": user_input})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": help_response})
+                            
+                            st.rerun()
                         
                     elif message_type["type"] == "summary_request" or message_type["type"] == "frustration":
                         # Handle summary requests
