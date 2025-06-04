@@ -1,3 +1,4 @@
+# modules/session.py
 import json
 import time
 import streamlit as st
@@ -36,14 +37,17 @@ except ImportError:
 class SessionManager:
     def __init__(self):
         """Initialize the session manager with server-based storage as the primary method."""
-        # Initialize server storage
         self.server_storage = ServerStorage()
         
     def get_session_state(self):
         """Return the current session state data structure."""
         if 'user_info' not in st.session_state:
-            self._initialize_session_state()
-            
+            # This will call _initialize_session_state if called before app.py fully initializes.
+            # It's better if app.py ensures initialization first.
+            # For safety, we can call it, but app.py's explicit init is preferred.
+            if not hasattr(st.session_state, 'initialized_by_app'):
+                 self._initialize_session_state()
+
         return {
             "user_info": st.session_state.user_info,
             "responses": st.session_state.responses,
@@ -52,11 +56,11 @@ class SessionManager:
             "visible_messages": st.session_state.visible_messages,
             "topic_areas_covered": st.session_state.topic_areas_covered,
             "saved_timestamp": datetime.now().isoformat(),
-            "version": "3.0"  # Updated version for server-first approach
+            "version": "3.0"
         }
     
     def _initialize_session_state(self):
-        """Initialize the session state with default values."""
+        """Initialize the session state with default values. The AI will generate the first message."""
         st.session_state.user_info = {"name": "", "company": ""}
         st.session_state.responses = []
         st.session_state.current_question_index = 0
@@ -71,46 +75,41 @@ class SessionManager:
             from utils.helpers import load_instructions
             st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
             
+        # Chat history will initially only contain the system prompt.
+        # The AI will generate the first message based on instructions in app.py.
         st.session_state.chat_history = [{"role": "system", "content": st.session_state.instructions}]
-        st.session_state.visible_messages = []
+        st.session_state.visible_messages = [] # Start with no visible messages
         
-        # Initialize topic tracking
         st.session_state.topic_areas_covered = {topic: False for topic in TOPIC_AREAS.keys()}
         st.session_state.summary_requested = False
         st.session_state.explicitly_finished = False
         st.session_state.restoring_session = False
         
-        # Add initial greeting that includes the first question
-        welcome_message = "👋 Hello! This questionnaire is designed to help ARCOS solution consultants better understand your company's requirements. If you're unsure about any question, simply type a ? and I'll provide a brief explanation. You can also type 'example' or click the 'Example' button to see a sample response.\n\nLet's get started! Could you please provide your name and your company name?"
-        st.session_state.chat_history.append({"role": "assistant", "content": welcome_message})
-        st.session_state.visible_messages.append({"role": "assistant", "content": welcome_message})
+        # Flag that this specific initialization has run
+        st.session_state.initialized_by_session_manager = True
+
 
     def save_session(self):
         """Save the current session state to server storage or file."""
         try:
-            # Get session data
             session_data = self.get_session_state()
             
-            # Clean up the chat history for serialization
             clean_chat_history = []
             for msg in session_data["chat_history"]:
                 if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    clean_chat_history.append({"role": msg["role"], "content": msg["content"]})
+                    clean_chat_history.append({"role": msg["role"], "content": str(msg["content"])}) # Ensure content is string
             session_data["chat_history"] = clean_chat_history
             
-            # Clean up visible messages
             clean_visible_messages = []
             for msg in session_data["visible_messages"]:
                 if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                    clean_visible_messages.append({"role": msg["role"], "content": msg["content"]})
+                    clean_visible_messages.append({"role": msg["role"], "content": str(msg["content"])}) # Ensure content is string
             session_data["visible_messages"] = clean_visible_messages
             
-            # Try to save to server storage (primary method)
             server_result = self.server_storage.save_session(session_data)
             server_success = server_result.get("success", False)
             session_id = server_result.get("session_id", "")
             
-            # Return the result
             if server_success:
                 return {
                     "success": True,
@@ -119,7 +118,6 @@ class SessionManager:
                     "session_id": session_id
                 }
             else:
-                # Return serialized data for file download as fallback
                 return {
                     "success": True, 
                     "method": "file", 
@@ -131,17 +129,7 @@ class SessionManager:
             return {"success": False, "message": f"Error saving session: {str(e)}"}
     
     def restore_session(self, source="file", file_data=None, session_id=None):
-        """
-        Restore a saved session from server or file.
-        
-        Args:
-            source: "server" or "file"
-            file_data: JSON string data if source is "file"
-            session_id: Session ID if source is "server"
-            
-        Returns:
-            dict: Result of the operation
-        """
+        """Restore a saved session from server or file."""
         try:
             if st.session_state.get("restoring_session", False):
                 return {"success": False, "message": "Already restoring a session."}
@@ -160,7 +148,6 @@ class SessionManager:
                 st.session_state.restoring_session = False
                 return {"success": False, "message": f"No saved session found in {source}."}
             
-            # Basic session state restoration
             st.session_state.user_info = session_data.get("user_info", {"name": "", "company": ""})
             st.session_state.responses = session_data.get("responses", [])
             st.session_state.current_question_index = session_data.get("current_question_index", 0)
@@ -179,12 +166,18 @@ class SessionManager:
                 from utils.helpers import load_instructions
                 st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
 
-            # Restore chat history
             st.session_state.chat_history = session_data.get("chat_history", [{"role": "system", "content": st.session_state.instructions}])
             if not st.session_state.chat_history or st.session_state.chat_history[0].get("role") != "system":
                 st.session_state.chat_history.insert(0, {"role": "system", "content": st.session_state.instructions})
+            
+            # Ensure all content in chat_history is string
+            for msg in st.session_state.chat_history:
+                if "content" in msg and msg["content"] is None:
+                    msg["content"] = "" 
+                elif "content" in msg and not isinstance(msg["content"], str):
+                    msg["content"] = str(msg["content"])
 
-            # *** MODIFIED SECTION FOR RESTORATION CONTEXT START ***
+
             current_q_index = st.session_state.current_question_index
             current_q = st.session_state.current_question
             topics_covered_state = session_data.get('topic_areas_covered', {})
@@ -210,16 +203,19 @@ class SessionManager:
                 "- Maintain a friendly, conversational tone.\n"
                 "[END_SYSTEM_INSTRUCTION]"
             )
-            # Add this instruction to the chat_history so the AI generates the welcome back message
             st.session_state.chat_history.append({
-                 "role": "system", # Changed from "user" to "system"
+                 "role": "system",
                  "content": restoration_context_content
             })
-            # *** MODIFIED SECTION FOR RESTORATION CONTEXT END ***
             
             st.session_state.visible_messages = session_data.get("visible_messages", [])
-            
-            # Restore topic tracking
+            # Ensure all content in visible_messages is string
+            for msg in st.session_state.visible_messages:
+                if "content" in msg and msg["content"] is None:
+                    msg["content"] = ""
+                elif "content" in msg and not isinstance(msg["content"], str):
+                     msg["content"] = str(msg["content"])
+
             st.session_state.topic_areas_covered = {topic: False for topic in TOPIC_AREAS.keys()}
             saved_topics = session_data.get("topic_areas_covered", {})
             for topic, covered in saved_topics.items():
@@ -229,18 +225,12 @@ class SessionManager:
             st.session_state.summary_requested = session_data.get("summary_requested", False)
             st.session_state.explicitly_finished = session_data.get("explicitly_finished", False)
             
-            # The AI will generate the "Welcome back" message based on the restoration_context_content.
-            # The app.py's main loop will call get_response with the updated chat_history.
-            # We don't add a hardcoded welcome message to visible_messages here anymore.
-            # The AI's response to the restoration_context_content will be added to visible_messages by the main app loop.
-
             st.session_state.restoring_session = False 
             
             return {"success": True, "message": f"Session restored from {source}. The assistant will now welcome you back."}
             
         except Exception as e:
             st.session_state.restoring_session = False
-            # Print detailed error for debugging
             import traceback
             print(f"Error restoring session: {str(e)}\n{traceback.format_exc()}")
             return {"success": False, "message": f"Error restoring session: {str(e)}"}
