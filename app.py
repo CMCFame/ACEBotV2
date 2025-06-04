@@ -488,6 +488,12 @@ def main():
             
             user_input = services["chat_ui"].add_input_form()
             
+            # DEBUG: Check if we're getting user input
+            if user_input:
+                print(f"DEBUG: Received user input: '{user_input}'")
+            else:
+                print("DEBUG: No user input received")
+            
             if user_input:
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
