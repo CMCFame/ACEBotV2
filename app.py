@@ -416,10 +416,6 @@ def main():
                     st.success("Completion notification sent!")
                     st.session_state.completion_email_sent = True
         else:
-            # DEBUG: Show we're in regular mode (not summary mode)
-            with st.sidebar:
-                st.write("🔄 In regular conversation mode")
-                
             # Add help/example buttons
             def on_help_click():
                 st.session_state.help_button_clicked = True
@@ -497,15 +493,7 @@ def main():
                 
             user_input = user_input if submit_button else None
             
-            # DEBUG: Show status in sidebar
-            with st.sidebar:
-                st.write(f"🔍 Debug: Submit: {submit_button}, Input: '{user_input}'")
-            
             if user_input:
-                # DEBUG: Show we're processing input
-                with st.sidebar:
-                    st.write(f"🚀 Processing input: '{user_input}'")
-                    
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
                 else:
@@ -542,69 +530,33 @@ def main():
                         st.rerun()
                         
                     else: # Regular input
-                        # DEBUG: Show what we're about to do
-                        with st.sidebar:
-                            st.write(f"🤖 Processing regular input: '{user_input}'")
-                            st.write(f"📝 Current chat history length: {len(st.session_state.chat_history)}")
-                        
                         st.session_state.chat_history.append({"role": "user", "content": user_input})
                         st.session_state.visible_messages.append({"role": "user", "content": user_input})
                         
-                        with st.sidebar:
-                            st.write(f"✅ Added user message, now calling AI...")
+                        ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
                         
-                        try:
-                            print(f"DEBUG APP: About to call AI service with {len(st.session_state.chat_history)} messages")
-                            ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
-                            print(f"DEBUG APP: Main AI Response Content: {ai_response_content}")
-                            
-                            with st.sidebar:
-                                st.write(f"🎯 AI Response: '{ai_response_content[:50]}...'")
-                                
-                        except Exception as e:
-                            with st.sidebar:
-                                st.error(f"❌ AI Error: {str(e)}")
-                            print(f"DEBUG APP: AI Service Error: {e}")
-                            return
+                        # Process topic updates but always show conversation
+                        services["topic_tracker"].process_topic_update(ai_response_content)
                         
-                        is_topic_update = services["topic_tracker"].process_topic_update(ai_response_content)
-                        
-                        with st.sidebar:
-                            st.write(f"📊 Is topic update: {is_topic_update}")
-                        
-                        # FIXED: Always show the response, even if it contains topic updates
-                        # The topic tracker can process updates without hiding the message
                         if "TOPIC_UPDATE:" in ai_response_content:
                             # Extract just the conversational part (before TOPIC_UPDATE)
                             conversation_part = ai_response_content.split("TOPIC_UPDATE:")[0].strip()
                             if conversation_part:  # Only add if there's actual conversation content
                                 st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
                                 st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
-                                with st.sidebar:
-                                    st.write(f"✅ Added conversation part: '{conversation_part[:30]}...'")
-                            else:
-                                with st.sidebar:
-                                    st.write("📊 Pure topic update, no conversation to display")
                         else:
                             # Regular response without topic update
                             st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
                             st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
-                            with st.sidebar:
-                                st.write(f"✅ Added regular AI response")
                             
-                            # Force a topic update message after each regular response
+                            # Only do additional topic check if no topic update was in the response
                             topic_check_messages_for_ai = st.session_state.chat_history.copy()
                             topic_check_messages_for_ai.append({
                                 "role": "user",
                                 "content": (
                                     "[SYSTEM_INSTRUCTION_FOR_THIS_TURN]:\n"
-                                    "Based on all conversation so far, which topics have been covered from the list: "
-                                    "basic_info, staffing_details, contact_process, list_management, insufficient_staffing, "
-                                    "calling_logistics, list_changes, tiebreakers, additional_rules.\n"
-                                    "Respond ONLY with a TOPIC_UPDATE message in the exact JSON format that includes the status (true or false) of ALL topic areas. For example:\n"
-                                    "TOPIC_UPDATE: {\"basic_info\": true, \"staffing_details\": false, \"contact_process\": true, "
-                                    "\"list_management\": false, \"insufficient_staffing\": false, \"calling_logistics\": false, "
-                                    "\"list_changes\": false, \"tiebreakers\": false, \"additional_rules\": false}\n"
+                                    "Based on all conversation so far, which topics have been covered?\n"
+                                    "Respond ONLY with a TOPIC_UPDATE message in JSON format.\n"
                                     "[END_SYSTEM_INSTRUCTION]"
                                 )
                             })
@@ -634,10 +586,6 @@ def main():
                                     st.session_state.current_question = st.session_state.questions[st.session_state.current_question_index]
                         
                         services["topic_tracker"].update_ai_context_after_answer(user_input)
-                        
-                        with st.sidebar:
-                            st.write("🔄 About to rerun...")
-                        
                         st.rerun()
 
     with tab2:
