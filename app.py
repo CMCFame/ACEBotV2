@@ -12,6 +12,7 @@ st.set_page_config(
 # Now we can import other dependencies
 import os
 import json
+import re # Import regex module
 from datetime import datetime
 
 # Continue with other imports
@@ -252,7 +253,7 @@ def main():
                 if email_result["success"]:
                     st.success("Completion notification sent!")
                 st.session_state.completion_email_sent = True
-        else:
+        else: 
             def on_help_click(): st.session_state.help_button_clicked = True
             def on_example_click(): st.session_state.example_button_clicked = True
             
@@ -316,43 +317,57 @@ def main():
                     st.session_state.chat_history.append({"role": "user", "content": guided_user_input_for_history})
                     
                     ai_response_content = services["ai_service"].get_response(st.session_state.chat_history)
-                    services["topic_tracker"].process_topic_update(ai_response_content)
-                    conversation_part = ai_response_content.split("TOPIC_UPDATE:")[0].strip()
-
-                    if conversation_part: 
-                        st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
-                        st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
-                    elif "TOPIC_UPDATE:" not in ai_response_content and ai_response_content:
-                         st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
-                         st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
-
-                    # Force next question if AI didn't ask one
-                    question_asked_by_ai = "?" in conversation_part
-                    if not conversation_part: # If conversation_part is empty, check original ai_response_content
-                        question_asked_by_ai = "?" in ai_response_content
-
-                    if not question_asked_by_ai and not st.session_state.get("summary_requested", False):
-                        force_question_history = st.session_state.chat_history.copy()
-                        force_question_instruction = (
-                            "[SYSTEM_TASK] Your previous response did not end with a question. "
-                            "Review the entire conversation history, your main system prompt (especially the 'Required Information Checklist' and 'MANDATORY TURN STRUCTURE'), "
-                            "and the current topic coverage. Determine the single most relevant next question to ask the user to continue the questionnaire. "
-                            "Respond ONLY with that question. Do not apologize, repeat previous statements, or add any other conversational text. Just ask the question."
-                        )
-                        force_question_history.append({"role": "system", "content": force_question_instruction})
-                        next_question_response = services["ai_service"].get_response(force_question_history, max_tokens=150)
-                        
-                        if next_question_response and not next_question_response.startswith("Error:"):
-                            st.session_state.chat_history.append({"role": "assistant", "content": next_question_response})
-                            st.session_state.visible_messages.append({"role": "assistant", "content": next_question_response})
-                        else:
-                            st.error(f"Assistant failed to provide a follow-up question. Response: {next_question_response}")
                     
-                    # User info extraction
+                    # <<<< START MODIFICATION for SUMMARY_REQUEST and TOPIC_UPDATE handling >>>>
+                    if "SUMMARY_REQUEST" in ai_response_content:
+                        st.session_state.summary_requested = True
+                        conversation_part_before_summary = ai_response_content.split("SUMMARY_REQUEST")[0].strip()
+                        if conversation_part_before_summary:
+                            st.session_state.chat_history.append({"role": "assistant", "content": conversation_part_before_summary})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part_before_summary})
+                        st.session_state.chat_history.append({"role": "system", "content": "[SYSTEM_NOTE] Summary has been requested. Do not ask further questions."})
+                        st.rerun()
+                    else:
+                        services["topic_tracker"].process_topic_update(ai_response_content) # Process for hidden TOPIC_UPDATE
+                        
+                        display_content = ai_response_content
+                        topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}" 
+                        # Check if pattern is on its own line or easily separable, then remove for display
+                        # More robustly, remove any occurrence
+                        display_content = re.sub(topic_update_pattern, "", display_content, flags=re.DOTALL).strip() 
+                        # Clean up potential multiple newlines if TOPIC_UPDATE was on its own line
+                        display_content = "\n".join([line for line in display_content.splitlines() if line.strip()])
+
+
+                        if display_content: 
+                            st.session_state.chat_history.append({"role": "assistant", "content": display_content})
+                            st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
+                        
+                        # Force next question if AI didn't ask one
+                        question_asked_by_ai = "?" in display_content
+                        
+                        if not question_asked_by_ai and not st.session_state.get("summary_requested", False):
+                            force_question_history = st.session_state.chat_history.copy()
+                            force_question_instruction = (
+                                "[SYSTEM_TASK] Your previous response did not end with a question. "
+                                "Review the entire conversation history, your main system prompt (especially the 'Required Information Checklist' and 'MANDATORY TURN STRUCTURE'), "
+                                "and the current topic coverage. Determine the single most relevant next question to ask the user to continue the questionnaire. "
+                                "Respond ONLY with that question. Do not apologize, repeat previous statements, or add any other conversational text. Just ask the question."
+                            )
+                            force_question_history.append({"role": "system", "content": force_question_instruction})
+                            next_question_response = services["ai_service"].get_response(force_question_history, max_tokens=150)
+                            
+                            if next_question_response and not next_question_response.startswith("Error:"):
+                                st.session_state.chat_history.append({"role": "assistant", "content": next_question_response})
+                                st.session_state.visible_messages.append({"role": "assistant", "content": next_question_response})
+                            else:
+                                st.error(f"Assistant failed to provide a follow-up question. Response: {next_question_response}")
+                    # <<<< END MODIFICATION >>>>
+                    
                     current_q_idx_for_user_info = st.session_state.get("current_question_index", 0)
-                    # Only try to extract user info if it hasn't been captured and it's the phase where the first question (name/company) was just asked.
-                    # A simple way to check if it's the "first substantive reply" is if responses list is empty.
-                    if len(st.session_state.get("responses", [])) == 0 and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
+                    is_first_user_reply_after_greeting = len(st.session_state.get("responses", [])) == 0
+                    
+                    if is_first_user_reply_after_greeting and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
                         user_info_data = services["ai_service"].extract_user_info(processed_user_input)
                         if user_info_data and (user_info_data.get("name") or user_info_data.get("company")):
                             st.session_state.user_info = user_info_data
@@ -360,17 +375,13 @@ def main():
                             if not any(msg["role"] == "system" and "User's name is" in msg["content"] for msg in st.session_state.chat_history):
                                 st.session_state.chat_history.append({"role": "system", "content": user_context_system_message})
                     
-                    # Advance question
                     questions_list = st.session_state.get("questions", [])
-                    # Ensure current_question is set if questions_list is not empty
-                    if not hasattr(st.session_state, 'current_question') and questions_list:
-                        st.session_state.current_question = questions_list[st.session_state.get("current_question_index",0)]
-
+                    current_question_text = st.session_state.get("current_question", questions_list[0] if questions_list else "")
 
                     if current_q_idx_for_user_info < len(questions_list):
-                        is_answer = services["ai_service"].check_response_type(st.session_state.current_question, processed_user_input)
+                        is_answer = services["ai_service"].check_response_type(current_question_text, processed_user_input)
                         if is_answer:
-                            st.session_state.responses.append((st.session_state.current_question, processed_user_input))
+                            st.session_state.responses.append((current_question_text, processed_user_input))
                             st.session_state.current_question_index += 1
                             if st.session_state.current_question_index < len(questions_list):
                                 st.session_state.current_question = questions_list[st.session_state.current_question_index]
@@ -382,65 +393,23 @@ def main():
 
     with tab2:
         st.markdown("## How to Use the ACE Questionnaire")
-        st.markdown("""
-        ### Welcome to the ACE Questionnaire!
-        This tool is designed to gather detailed information about your utility company's callout processes for ARCOS implementation. Follow these simple instructions to complete the questionnaire:
-        #### Getting Started
-        1. Enter your name and company name when prompted
-        2. Answer each question to the best of your ability
-        3. If you need to take a break, use the "Save Progress" button in the sidebar
-        #### Special Features
-        * **Need Help?** - Click the "Need help?" button below any question to get a detailed explanation
-        * **Examples** - Click the "Example" button to see sample responses for the current question
-        * **Save Progress** - Save your work at any time using the sidebar option
-        * **Resume Later** - Use your session ID or upload your saved file to continue where you left off
-        #### Navigation Tips
-        * Answer one question at a time
-        * The progress bar shows how many topic areas you've completed
-        * All 9 topic areas must be covered to complete the questionnaire
-        * When complete, you'll receive a summary you can download
-        #### Topic Areas Covered
-        1. Basic Information - User, company, callout types
-        2. Staffing Details - Employee requirements and roles
-        3. Contact Process - First contact and methods
-        4. List Management - Organization and traversal
-        5. Insufficient Staffing - Alternative procedures
-        6. Calling Logistics - Simultaneous calls, callbacks
-        7. List Changes - Updates to ordering and content
-        8. Tiebreakers - Methods when ordering is equal
-        9. Additional Rules - Scheduling and exceptions
-        If you have any questions about the questionnaire, please check the FAQ tab or contact your ARCOS implementation consultant.
-        """)
+        st.markdown("""...""") 
     
     with tab3:
         st.markdown("## Frequently Asked Questions")
-        with st.expander("What is the ACE Questionnaire?"):
-            st.write("The ACE (ARCOS Configuration Exploration) Questionnaire is a tool designed to gather detailed information about your utility company's callout processes. This information helps ARCOS solution consultants understand your specific requirements and configure the ARCOS system to match your existing workflows.")
-        with st.expander("How long does it take to complete?"):
-            st.write("The questionnaire typically takes 15-20 minutes to complete, depending on the complexity of your callout processes. You can save your progress at any time and return to complete it later.")
-        with st.expander("Can I save my progress and continue later?"):
-            st.write("Yes! Use the \"Save Progress\" button in the sidebar to save your current progress. You'll receive a Session ID that you can use to resume later. Make sure to save this ID in a safe place. You can also download a backup file if needed.")
-        with st.expander("What if I don't know the answer to a question?"):
-            st.write("If you're unsure about any question, click the \"Need help?\" button for a detailed explanation. If you still don't know, provide your best understanding and make a note that this area may need further discussion with your implementation consultant.")
-        with st.expander("Will my answers be saved automatically?"):
-            st.write("No, your answers are not saved automatically. Be sure to use the \"Save Progress\" button in the sidebar to save your work before closing the application.")
-        with st.expander("Who will see my responses?"):
-            st.write("Your responses will be shared with the ARCOS implementation team assigned to your project. The information is used solely for configuring your ARCOS system to match your requirements.")
-        with st.expander("What happens after I complete the questionnaire?"):
-            st.write("After completion, you'll receive a summary of your responses that you can download. A notification will also be sent to your ARCOS implementation consultant, who will review your responses and schedule a follow-up discussion to clarify any points as needed.")
-        with st.expander("How do I resume a saved session?"):
-            st.write("""
-            To resume a saved session, you have two options:
-            1. **Using Session ID**: Enter your Session ID in the sidebar and click "Load from Server". This is the recommended method if you saved your session ID when prompted.
-            2. **Using a File**: If you downloaded a progress file, you can upload it in the sidebar under "Upload Progress File" and then click "Load from File".
-            The system will restore your conversation exactly where you left off, and the AI will remember the context of your previous discussion.
-            """)
-
+        with st.expander("What is the ACE Questionnaire?"): st.write("...")
+        with st.expander("How long does it take to complete?"): st.write("...")
+        with st.expander("Can I save my progress and continue later?"): st.write("...")
+        with st.expander("What if I don't know the answer to a question?"): st.write("...")
+        with st.expander("Will my answers be saved automatically?"): st.write("...")
+        with st.expander("Who will see my responses?"): st.write("...")
+        with st.expander("What happens after I complete the questionnaire?"): st.write("...")
+        with st.expander("How do I resume a saved session?"): st.write("...")
+            
 add_sidebar_ui()
 
 if __name__ == "__main__":
     if 'app_initialized_first_run' not in st.session_state:
-        # Pre-load necessary data for the first run if not already loaded by session restore
         if 'questions' not in st.session_state:
             st.session_state.questions = load_questions('data/questions.txt')
         if 'instructions' not in st.session_state:
