@@ -486,13 +486,16 @@ def main():
                     st.error("Could not find a question to provide an example for.")
                     st.session_state.example_button_clicked = False
             
-            user_input = services["chat_ui"].add_input_form()
+            # DEBUG: Replace with direct form implementation to isolate issue
+            with st.form(key='chat_form_debug', clear_on_submit=True):
+                user_input = st.text_input("Your response:", placeholder="Type your response or ask a question...")
+                submit_button = st.form_submit_button("Send")
+                
+            user_input = user_input if submit_button else None
             
-            # DEBUG: Check if we're getting user input
-            if user_input:
-                print(f"DEBUG: Received user input: '{user_input}'")
-            else:
-                print("DEBUG: No user input received")
+            # DEBUG: Show status in sidebar
+            with st.sidebar:
+                st.write(f"🔍 Debug: Submit: {submit_button}, Input: '{user_input}'")
             
             if user_input:
                 if not user_input or user_input.isspace():
