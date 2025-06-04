@@ -264,10 +264,7 @@ def main():
         if 'example_button_clicked' not in st.session_state:
             st.session_state.example_button_clicked = False
         
-        # FIXED: Prevent rerun loop by checking if processing input
-        if st.session_state.get('processing_input', False):
-            st.session_state.processing_input = False
-            return
+        # Remove the problematic early return that was preventing UI from rendering
         
         # Display chat history with special handling for examples
         for i, message in enumerate(st.session_state.visible_messages):
@@ -495,9 +492,6 @@ def main():
                 if not user_input or user_input.isspace():
                     st.error("Please enter a message before sending.")
                 else:
-                    # FIXED: Set processing flag to prevent rerun loop
-                    st.session_state.processing_input = True
-                    
                     message_type = services["ai_service"].process_special_message_types(user_input)
                     
                     if message_type["type"] == "example_request":
