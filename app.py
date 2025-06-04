@@ -572,12 +572,25 @@ def main():
                         with st.sidebar:
                             st.write(f"📊 Is topic update: {is_topic_update}")
                         
-                        if not is_topic_update:
+                        # FIXED: Always show the response, even if it contains topic updates
+                        # The topic tracker can process updates without hiding the message
+                        if "TOPIC_UPDATE:" in ai_response_content:
+                            # Extract just the conversational part (before TOPIC_UPDATE)
+                            conversation_part = ai_response_content.split("TOPIC_UPDATE:")[0].strip()
+                            if conversation_part:  # Only add if there's actual conversation content
+                                st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
+                                st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
+                                with st.sidebar:
+                                    st.write(f"✅ Added conversation part: '{conversation_part[:30]}...'")
+                            else:
+                                with st.sidebar:
+                                    st.write("📊 Pure topic update, no conversation to display")
+                        else:
+                            # Regular response without topic update
                             st.session_state.chat_history.append({"role": "assistant", "content": ai_response_content})
                             st.session_state.visible_messages.append({"role": "assistant", "content": ai_response_content})
-                            
                             with st.sidebar:
-                                st.write(f"✅ Added AI response to messages")
+                                st.write(f"✅ Added regular AI response")
                             
                             # Force a topic update message after each regular response
                             topic_check_messages_for_ai = st.session_state.chat_history.copy()
@@ -598,10 +611,6 @@ def main():
                             
                             topic_update_response_content = services["ai_service"].get_response(topic_check_messages_for_ai)
                             services["topic_tracker"].process_topic_update(topic_update_response_content)
-                        else:
-                            print("DEBUG APP: Main AI response was a TOPIC_UPDATE, no separate topic check needed.")
-                            with st.sidebar:
-                                st.write("📊 Response was a topic update")
                         
                         if st.session_state.current_question_index == 0:
                             user_info_data = services["ai_service"].extract_user_info(user_input)
