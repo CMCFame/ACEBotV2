@@ -80,15 +80,15 @@ class TopicTracker:
         """
         # Define minimum requirements for each topic
         requirements = {
-            "basic_info": ["name", "company", ("callout" or "situation" or "type")],
-            "staffing_details": ["employee", "staff", "number", ("role" or "classification")],
+            "basic_info": ["name", "company", ("callout", "situation", "type")],
+            "staffing_details": ["employee", "staff", "number", ("role", "classification")],
             "contact_process": ["call first", "contact", "device", "why"],
-            "list_management": ["list", ("straight" or "skip" or "order"), "based on"],
-            "insufficient_staffing": ["required number", ("different list" or "whole list" or "not enough")],
-            "calling_logistics": ["simultaneous", ("same time" or "call again")],
-            "list_changes": ["change", ("over time" or "update")],
-            "tiebreakers": ["tie", ("overtime" or "seniority")],
-            "additional_rules": [("email" or "text"), ("rule" or "prevent" or "excuse")]
+            "list_management": ["list", ("straight", "skip", "order"), "based on"],
+            "insufficient_staffing": ["required number", ("different list", "whole list", "not enough")],
+            "calling_logistics": ["simultaneous", ("same time", "call again")],
+            "list_changes": ["change", ("over time", "update")],
+            "tiebreakers": ["tie", ("overtime", "seniority")],
+            "additional_rules": [("email", "text"), ("rule", "prevent", "excuse")]
         }
         
         if topic not in requirements:
