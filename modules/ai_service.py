@@ -1,13 +1,8 @@
-# modules/ai_service.py
-import boto3
-import streamlit as st
-import json
-import os
-from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+# modules/ai_service.py - Enhanced answer recognition
 
 class AIService:
     def __init__(self, aws_region=BEDROCK_AWS_REGION):
-        # ... (existing __init__ code)
+        # ... existing init code stays the same
         try:
             aws_access_key_id = st.secrets.aws.get("aws_access_key_id") if hasattr(st, 'secrets') and 'aws' in st.secrets else os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_access_key = st.secrets.aws.get("aws_secret_access_key") if hasattr(st, 'secrets') and 'aws' in st.secrets else os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -17,13 +12,177 @@ class AIService:
                     service_name='bedrock-runtime', region_name=aws_region,
                     aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key
                 )
-            else: # Try default provider chain
+            else:
                 self.client = boto3.client(service_name='bedrock-runtime', region_name=aws_region)
         except Exception as e:
-            st.error(f"❌ Failed to initialize Bedrock client: {e}. Ensure AWS credentials and region are correctly configured.")
+            st.error(f"❌ Failed to initialize Bedrock client: {e}")
             self.client = None
 
+    def analyze_comprehensive_answer(self, user_input):
+        """
+        Analyze if user provided comprehensive answer covering multiple topics.
+        Returns topics that might be covered in the response.
+        """
+        if len(user_input.strip()) < 50:  # Short answers unlikely to be comprehensive
+            return []
+        
+        # Enhanced pattern matching for comprehensive answers
+        topic_indicators = {
+            "contact_process": ["call first", "contact", "dispatcher", "supervisor", "device", "phone"],
+            "list_management": ["list", "order", "seniority", "classification", "skip", "straight"],
+            "staffing_details": ["employee", "technician", "crew", "role", "certification", "lineman"],
+            "calling_logistics": ["simultaneous", "union", "individual", "same time", "one at a time"],
+            "insufficient_staffing": ["not enough", "required number", "different list", "mutual aid"],
+            "list_changes": ["change", "update", "quarterly", "over time", "hire", "terminate"],
+            "tiebreakers": ["tie", "tiebreaker", "overtime", "seniority", "alphabetical"],
+            "additional_rules": ["email", "text", "shift", "hours", "vacation", "excuse"]
+        }
+        
+        user_lower = user_input.lower()
+        covered_topics = []
+        
+        for topic, keywords in topic_indicators.items():
+            matches = sum(1 for keyword in keywords if keyword in user_lower)
+            if matches >= 2:  # Require multiple keyword matches
+                covered_topics.append(topic)
+        
+        return covered_topics
 
+    def check_response_type(self, question, user_input):
+        """Enhanced response type checking."""
+        # Handle help/example requests quickly
+        help_indicators = ["example", "help", "what do you mean", "explain", "clarify"]
+        if any(indicator in user_input.lower() for indicator in help_indicators):
+            return False
+        
+        # If it's a substantial response (>20 chars), likely an answer
+        if len(user_input.strip()) > 20:
+            return True
+            
+        # Use AI for edge cases
+        system_prompt = "Determine if this is a direct answer or help request. Respond only 'ANSWER' or 'QUESTION'."
+        messages_for_check = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Question: '{question}' Response: '{user_input}' - Is this an answer or help request?"}
+        ]
+        response = self.get_response(messages_for_check, max_tokens=10, temperature=0.0)
+        return "ANSWER" in response.upper() if response else True
+
+    def extract_user_info(self, user_input):
+        """Enhanced user info extraction."""
+        # Quick pattern matching first
+        patterns = {
+            'name': r'(?:name is|i\'m|my name is|this is)\s+([a-zA-Z\s]+)',
+            'company': r'(?:company|work at|from)\s+([a-zA-Z\s&]+)'
+        }
+        
+        extracted = {"name": "", "company": ""}
+        user_lower = user_input.lower()
+        
+        for field, pattern in patterns.items():
+            match = re.search(pattern, user_lower)
+            if match:
+                extracted[field] = match.group(1).strip().title()
+        
+        # If patterns didn't work, use AI
+        if not (extracted["name"] or extracted["company"]):
+            system_prompt = (
+                "Extract name and company from user response. "
+                "Format: NAME: [name], COMPANY: [company]. Use 'unknown' if not found."
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"User response: {user_input}"}
+            ]
+            response = self.get_response(messages, max_tokens=100, temperature=0.0)
+            
+            try:
+                if "NAME:" in response and "COMPANY:" in response:
+                    name_match = re.search(r'NAME:\s*([^,]+)', response)
+                    company_match = re.search(r'COMPANY:\s*(.+)', response)
+                    
+                    if name_match and name_match.group(1).lower() != "unknown":
+                        extracted["name"] = name_match.group(1).strip()
+                    if company_match and company_match.group(1).lower() != "unknown":
+                        extracted["company"] = company_match.group(1).strip()
+            except:
+                pass
+        
+        return extracted
+
+    def process_special_message_types(self, user_input):
+        """Enhanced special message detection."""
+        lower_input = user_input.lower().strip()
+        
+        # Quick exact matches
+        exact_matches = {
+            "example": {"type": "example_request"},
+            "show example": {"type": "example_request"},
+            "help": {"type": "help_request"},
+            "i need help": {"type": "help_request"},
+            "summary": {"type": "summary_request"},
+            "download": {"type": "summary_request"},
+            "done": {"type": "summary_request"},
+            "finished": {"type": "summary_request"},
+            "complete": {"type": "summary_request"},
+            "that's all": {"type": "summary_request"},
+            "nothing else": {"type": "summary_request"},
+            "none": {"type": "summary_request"},
+            "no": {"type": "summary_request"}
+        }
+        
+        if lower_input in exact_matches:
+            return exact_matches[lower_input]
+        
+        # Partial matches
+        if any(phrase in lower_input for phrase in ["can you show", "give me an example"]):
+            return {"type": "example_request"}
+        
+        if any(phrase in lower_input for phrase in ["what do you mean", "explain", "clarify"]):
+            return {"type": "help_request"}
+        
+        if any(phrase in lower_input for phrase in ["that's everything", "all done", "we're done"]):
+            return {"type": "summary_request"}
+        
+        return {"type": "regular_input"}
+
+    def get_example_response(self, last_question):
+        """Improved example generation."""
+        # Extract key topic from question
+        topic_keywords = {
+            "contact": "We call the on-duty supervisor first because they coordinate crew assignments.",
+            "device": "Each employee has a company phone and personal backup. We try the company phone first.",
+            "list": "We have 3 lists: primary on-call, secondary backup, and emergency contractors.",
+            "number": "Typically 3-4 people: one supervisor and 2-3 technicians depending on the situation.",
+            "why": "This ensures consistent decision-making and proper resource allocation.",
+            "when": "During storm season we might get 10-15 callouts, but normally it's 3-5 per week.",
+            "simultaneous": "Union rules require us to call in seniority order, so no simultaneous calling.",
+            "change": "Lists update quarterly when overtime hours reset, plus any time someone transfers.",
+            "tie": "If overtime is equal, we use seniority. If that's equal too, alphabetical by last name."
+        }
+        
+        question_lower = last_question.lower() if last_question else ""
+        
+        for keyword, example in topic_keywords.items():
+            if keyword in question_lower:
+                return example
+        
+        # Fallback to AI generation
+        system_message = f"""
+        Provide a brief, specific example answer for: "{last_question}"
+        Make it realistic for a utility company. Keep it under 20 words.
+        Don't include prefixes like "Example:" - just the example text.
+        """
+        
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": "Generate the example now."}
+        ]
+        
+        response = self.get_response(messages, max_tokens=50, temperature=0.7)
+        return response.strip() if response else "We handle this based on our standard procedures."
+
+    # ... rest of existing methods stay the same
     def _clean_and_prepare_messages(self, messages):
         consolidated_system_prompt = ""
         claude_messages = []
@@ -35,7 +194,7 @@ class AIService:
             
             if role == "system":
                 consolidated_system_prompt += content.strip() + "\n\n"
-            elif role in ["user", "assistant"] and (content.strip() or role == "user"): # Keep user message even if "empty" for initial trigger
+            elif role in ["user", "assistant"] and (content.strip() or role == "user"):
                 claude_messages.append({"role": role, "content": content.strip()})
         return consolidated_system_prompt.strip(), claude_messages
 
@@ -49,29 +208,18 @@ class AIService:
             api_call_messages = []
 
             if system_prompt:
-                if not claude_messages: # AI's first turn, only system prompt was provided
-                    # Claude API: "If you include a system prompt, the messages array must start with a user turn."
-                    # The system prompt has instructions for the AI on how to begin.
+                if not claude_messages:
                     api_call_messages = [{"role": "user", "content": "Please proceed based on your instructions."}]
                 elif claude_messages[0]["role"] == "assistant":
-                    # History started with system, then assistant (e.g. from a hardcoded first message)
-                    # Prepend a dummy user message to make the sequence: user, assistant, user...
-                    # This is a safeguard; ideally, app.py structure should avoid this for Claude.
                     api_call_messages = [{"role": "user", "content": "Context."}] 
                     api_call_messages.extend(claude_messages)
-                    # st.warning("AIService: Adjusted message order for Claude API compliance.") # Optional debug
-                else: # History is fine (starts with user, or no system prompt and starts with user)
+                else:
                     api_call_messages = claude_messages
-            else: # No system prompt
+            else:
                 api_call_messages = claude_messages
 
-            if not api_call_messages and not system_prompt: # Nothing to send
+            if not api_call_messages and not system_prompt:
                  return "Error: No messages or system prompt to process."
-            # If system_prompt is present, api_call_messages is guaranteed to be non-empty here.
-            # If no system_prompt, api_call_messages could be empty if original messages was empty.
-            if not api_call_messages and system_prompt : #This case should be covered above
-                 return "Error: System prompt present but no messages for API call."
-
 
             body = {
                 "anthropic_version": "bedrock-2023-05-31", 
@@ -82,13 +230,11 @@ class AIService:
             
             if system_prompt:
                 body["system"] = system_prompt
-            
-            # Make sure messages array is not empty if we are sending it
-            if not body["messages"] and "system" not in body: # Final safety if somehow messages became empty and no system prompt
-                 return "Error: No content to send to Bedrock model."
-            if not body["messages"] and "system" in body and not body["system"]: # System prompt is empty string
-                 return "Error: Empty system prompt and no messages."
 
+            if not body["messages"] and "system" not in body:
+                 return "Error: No content to send to Bedrock model."
+            if not body["messages"] and "system" in body and not body["system"]:
+                 return "Error: Empty system prompt and no messages."
 
             response = self.client.invoke_model(
                 modelId=BEDROCK_MODEL_ID,
@@ -110,83 +256,9 @@ class AIService:
                 if error_type and error_message:
                     st.error(f"Bedrock API Error ({error_type}): {error_message}")
                     return f"Error from Bedrock: {error_message}"
-                # Fallback for unexpected structure
                 st.warning(f"Unexpected response structure from Bedrock: {response_body}")
                 return "Error: Could not parse response from Bedrock."
 
         except Exception as e: 
             st.error(f"Bedrock API Call Error: {str(e)}")
             return f"Error calling Bedrock API: {str(e)}"
-
-    def extract_user_info(self, user_input):
-        # ... (existing extract_user_info code, should still work)
-        system_prompt = (
-            "You are an expert text analysis assistant. Your task is to extract the user's name and company name "
-            "from their response to the question 'Could you please provide your name and your company name?'.\n\n"
-            "Respond ONLY with the following exact format:\n"
-            "NAME: [extracted name or unknown], COMPANY: [extracted company or unknown]\n\n"
-            "Do not include any other text, greetings, or explanations. Only the 'NAME: ..., COMPANY: ...' line."
-        )
-        messages_for_extraction = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"User response: {user_input}"}
-        ]
-        extract_response = self.get_response(messages_for_extraction, max_tokens=100, temperature=0.0)
-        try:
-            name_part = "unknown"; company_part = "unknown"
-            raw_response_str = str(extract_response).strip()
-            name_marker = "NAME:"; company_marker = "COMPANY:"
-            name_start_index = raw_response_str.find(name_marker)
-            company_start_index = raw_response_str.find(company_marker)
-            if name_start_index != -1:
-                name_value_start = name_start_index + len(name_marker)
-                name_end_index = company_start_index if company_start_index > name_value_start else len(raw_response_str)
-                name_str_candidate = raw_response_str[name_value_start:name_end_index].split("\n")[0].replace(",", "").strip()
-                if name_str_candidate and name_str_candidate.lower() != "unknown": name_part = name_str_candidate.replace("[", "").replace("]", "").strip()
-            if company_start_index != -1:
-                company_value_start = company_start_index + len(company_marker)
-                company_str_candidate = raw_response_str[company_value_start:].split("\n")[0].strip()
-                if company_str_candidate and company_str_candidate.lower() != "unknown": company_part = company_str_candidate.replace("[", "").replace("]", "").strip()
-            return {"name": name_part if name_part and name_part.lower() != "unknown" else "", "company": company_part if company_part and company_part.lower() != "unknown" else ""}
-        except Exception as e:
-            print(f"Error extracting user info with Claude: {e}. Response was: {extract_response}")
-            return {"name": "", "company": ""}
-
-
-    def check_response_type(self, question, user_input):
-        # ... (existing check_response_type code, should still work)
-        system_prompt = "You are an AI assistant that determines if a user's message is a direct answer to a given question or if it's a request for help or clarification. Respond with only the single word 'ANSWER' or the single word 'QUESTION'."
-        messages_for_check = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"The question asked was: '{question}'. The user responded: '{user_input}'. Is the user's response a direct answer to the question, or is it a request for help or clarification? Respond with only the single word 'ANSWER' or 'QUESTION'."}
-        ]
-        response = self.get_response(messages_for_check, max_tokens=10, temperature=0.0)
-        return "ANSWER" in response.upper() if response else False
-
-
-    def process_special_message_types(self, user_input):
-        # ... (existing process_special_message_types code)
-        lower_input = user_input.lower().strip()
-        if lower_input in ["example", "show example", "give me an example", "example answer", "can you show me an example?"]: return {"type": "example_request"}
-        if lower_input in ["?", "help", "i need help", "what do you mean"]: return {"type": "help_request"}
-        if lower_input in ["summary", "download", "download summary", "get summary", "show summary", "yes", "provide summary"]: return {"type": "summary_request"}
-        if any(phrase in lower_input for phrase in ["already answered", "not helpful", "i already responded", "already responded"]): return {"type": "frustration", "subtype": "summary_request"}
-        return {"type": "regular_input"}
-
-    def get_example_response(self, last_question):
-        # ... (existing get_example_response code, ensure it's robust)
-        system_message = f"""
-You are providing a brief example answer for a utility company callout process question.
-The question you need to provide an example for is: "{last_question}"
-Your task is to provide ONLY the example text itself. It should be short (1-2 sentences) and specific.
-Do NOT include any prefixes like "Example:", "Here's an example:", or any explanations.
-Do NOT repeat the question. Just output the example sentence(s).
-For instance, if the question was about who to contact first, a good direct example output from you would be:
-"We contact the on-call supervisor first as they are responsible for assessing the situation and dispatching the appropriate crew."
-"""
-        messages_for_example = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": "Provide the example answer now."}
-        ]
-        example_response_text = self.get_response(messages_for_example, max_tokens=150, temperature=0.7)
-        return example_response_text.strip() if example_response_text else "Could not generate an example at this time."
