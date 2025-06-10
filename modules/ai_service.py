@@ -24,6 +24,78 @@ class AIService:
             st.error(f"❌ Failed to initialize Bedrock client: {e}")
             self.client = None
 
+    def get_example_response(self, last_question):
+        """
+        Debug version to see what's happening with example generation.
+        """
+        print(f"DEBUG: get_example_response called with: {last_question}")
+        
+        if not last_question or len(last_question.strip()) < 5:
+            print("DEBUG: Question too short, using fallback")
+            return "We handle this according to our standard procedures."
+        
+        try:
+            # Clean the question
+            clean_question = re.sub(r'<[^>]+>', '', last_question)
+            clean_question = clean_question.strip()
+            print(f"DEBUG: Cleaned question: {clean_question}")
+            
+            # Check if this is a frequency question specifically
+            if any(word in clean_question.lower() for word in ["often", "frequency", "how many times", "typically happen"]):
+                print("DEBUG: Detected frequency question, generating frequency example")
+                return "About 2-3 times per week, but can spike to 8-10 during storm season"
+            
+            # Check if this is a types question
+            elif any(word in clean_question.lower() for word in ["type", "kinds", "what", "situations"]):
+                print("DEBUG: Detected types question, generating types example")  
+                return "Power outages, equipment failures, and emergency repairs"
+            
+            # Try AI generation for other questions
+            system_prompt = f"""
+            Question: "{clean_question}"
+            
+            Generate a brief example answer that directly responds to this question.
+            Keep it under 12 words and realistic for a utility company.
+            """
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Generate example."}
+            ]
+            
+            print("DEBUG: Trying AI generation...")
+            response = self.get_response(messages, max_tokens=30, temperature=0.5)
+            print(f"DEBUG: AI generated: {response}")
+            
+            if response and len(response.strip()) > 3:
+                return response.strip()
+            else:
+                print("DEBUG: AI generation failed, using smart fallback")
+                return self._get_smart_fallback(clean_question)
+                
+        except Exception as e:
+            print(f"DEBUG: Exception in example generation: {e}")
+            return self._get_smart_fallback(last_question)
+    
+    def _get_smart_fallback(self, question):
+        """Smarter fallback that actually looks at the question."""
+        q_lower = question.lower()
+        
+        print(f"DEBUG: Smart fallback for: {q_lower}")
+        
+        if any(word in q_lower for word in ["often", "frequency", "how many times"]):
+            return "Usually 3-5 times per week"
+        elif any(word in q_lower for word in ["many employees", "many workers", "how many people"]):
+            return "Typically 4-6 technicians"
+        elif any(word in q_lower for word in ["contact first", "call first"]):
+            return "The emergency dispatcher"
+        elif any(word in q_lower for word in ["device", "phone", "communication"]):
+            return "Company cell phone and radio backup"
+        elif any(word in q_lower for word in ["list", "organize"]):
+            return "By seniority and job classification"
+        else:
+            return "We follow standard procedures for this"
+
     def analyze_comprehensive_answer(self, user_input):
         """
         Analyze if user provided comprehensive answer covering multiple topics.
@@ -151,78 +223,6 @@ class AIService:
             return {"type": "summary_request"}
         
         return {"type": "regular_input"}
-
-   def get_example_response(self, last_question):
-        """
-        Debug version to see what's happening with example generation.
-        """
-        print(f"DEBUG: get_example_response called with: {last_question}")
-        
-        if not last_question or len(last_question.strip()) < 5:
-            print("DEBUG: Question too short, using fallback")
-            return "We handle this according to our standard procedures."
-        
-        try:
-            # Clean the question
-            clean_question = re.sub(r'<[^>]+>', '', last_question)
-            clean_question = clean_question.strip()
-            print(f"DEBUG: Cleaned question: {clean_question}")
-            
-            # Check if this is a frequency question specifically
-            if any(word in clean_question.lower() for word in ["often", "frequency", "how many times", "typically happen"]):
-                print("DEBUG: Detected frequency question, generating frequency example")
-                return "About 2-3 times per week, but can spike to 8-10 during storm season"
-            
-            # Check if this is a types question
-            elif any(word in clean_question.lower() for word in ["type", "kinds", "what", "situations"]):
-                print("DEBUG: Detected types question, generating types example")  
-                return "Power outages, equipment failures, and emergency repairs"
-            
-            # Try AI generation for other questions
-            system_prompt = f"""
-            Question: "{clean_question}"
-            
-            Generate a brief example answer that directly responds to this question.
-            Keep it under 12 words and realistic for a utility company.
-            """
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Generate example."}
-            ]
-            
-            print("DEBUG: Trying AI generation...")
-            response = self.get_response(messages, max_tokens=30, temperature=0.5)
-            print(f"DEBUG: AI generated: {response}")
-            
-            if response and len(response.strip()) > 3:
-                return response.strip()
-            else:
-                print("DEBUG: AI generation failed, using smart fallback")
-                return self._get_smart_fallback(clean_question)
-                
-        except Exception as e:
-            print(f"DEBUG: Exception in example generation: {e}")
-            return self._get_smart_fallback(last_question)
-    
-    def _get_smart_fallback(self, question):
-        """Smarter fallback that actually looks at the question."""
-        q_lower = question.lower()
-        
-        print(f"DEBUG: Smart fallback for: {q_lower}")
-        
-        if any(word in q_lower for word in ["often", "frequency", "how many times"]):
-            return "Usually 3-5 times per week"
-        elif any(word in q_lower for word in ["many employees", "many workers", "how many people"]):
-            return "Typically 4-6 technicians"
-        elif any(word in q_lower for word in ["contact first", "call first"]):
-            return "The emergency dispatcher"
-        elif any(word in q_lower for word in ["device", "phone", "communication"]):
-            return "Company cell phone and radio backup"
-        elif any(word in q_lower for word in ["list", "organize"]):
-            return "By seniority and job classification"
-        else:
-            return "We follow standard procedures for this"
 
     def _clean_and_prepare_messages(self, messages):
         """Clean and prepare messages for the API."""
