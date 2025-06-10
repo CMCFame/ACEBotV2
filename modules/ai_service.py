@@ -1,8 +1,14 @@
-# modules/ai_service.py - Enhanced answer recognition
+# modules/ai_service.py
+import boto3
+import streamlit as st
+import json
+import os
+import re
+from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 class AIService:
     def __init__(self, aws_region=BEDROCK_AWS_REGION):
-        # ... existing init code stays the same
+        """Initialize the AI service."""
         try:
             aws_access_key_id = st.secrets.aws.get("aws_access_key_id") if hasattr(st, 'secrets') and 'aws' in st.secrets else os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_access_key = st.secrets.aws.get("aws_secret_access_key") if hasattr(st, 'secrets') and 'aws' in st.secrets else os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -182,8 +188,8 @@ class AIService:
         response = self.get_response(messages, max_tokens=50, temperature=0.7)
         return response.strip() if response else "We handle this based on our standard procedures."
 
-    # ... rest of existing methods stay the same
     def _clean_and_prepare_messages(self, messages):
+        """Clean and prepare messages for the API."""
         consolidated_system_prompt = ""
         claude_messages = []
         for msg in messages:
@@ -199,6 +205,7 @@ class AIService:
         return consolidated_system_prompt.strip(), claude_messages
 
     def get_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
+        """Get response from the AI service."""
         if not self.client:
             return "Bedrock client not initialized. Please check AWS credentials configuration."
 
