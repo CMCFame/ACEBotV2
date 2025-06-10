@@ -153,40 +153,128 @@ class AIService:
         return {"type": "regular_input"}
 
     def get_example_response(self, last_question):
-        """Improved example generation."""
-        # Extract key topic from question
-        topic_keywords = {
-            "contact": "We call the on-duty supervisor first because they coordinate crew assignments.",
-            "device": "Each employee has a company phone and personal backup. We try the company phone first.",
-            "list": "We have 3 lists: primary on-call, secondary backup, and emergency contractors.",
-            "number": "Typically 3-4 people: one supervisor and 2-3 technicians depending on the situation.",
-            "why": "This ensures consistent decision-making and proper resource allocation.",
-            "when": "During storm season we might get 10-15 callouts, but normally it's 3-5 per week.",
-            "simultaneous": "Union rules require us to call in seniority order, so no simultaneous calling.",
-            "change": "Lists update quarterly when overtime hours reset, plus any time someone transfers.",
-            "tie": "If overtime is equal, we use seniority. If that's equal too, alphabetical by last name."
-        }
+            """
+            Robust example generation for testing - always provides relevant examples.
+            Designed to support comprehensive testing of all question types.
+            """
+            if not last_question:
+                return "We handle this based on our standard emergency response procedures."
+            
+            question_lower = last_question.lower()
+            
+            # COMPREHENSIVE example mapping for all major question types
+            # This ensures every question type has a specific, relevant example
+            
+            # Basic Information Examples
+            if any(word in question_lower for word in ["name", "company"]):
+                return "John Smith from Metro Electric Utility"
+            
+            elif any(word in question_lower for word in ["type", "emergency", "situation", "callout", "handle", "respond"]):
+                return "Power outages, downed lines, transformer failures, and gas leaks"
+            
+            elif any(word in question_lower for word in ["often", "frequency", "how many times", "occur", "happen"]):
+                return "About 4-6 emergencies per week, more during storm season"
+            
+            # Staffing Examples
+            elif any(word in question_lower for word in ["workers", "employees", "people", "staff", "how many"]) and not any(word in question_lower for word in ["device", "phone", "contact"]):
+                return "Usually 3-4 field technicians plus 1 supervisor for standard emergencies"
+            
+            elif any(word in question_lower for word in ["job", "role", "skill", "certification", "qualification", "training"]):
+                return "Licensed electricians, certified safety coordinators, and equipment operators"
+            
+            # Contact Process Examples  
+            elif any(word in question_lower for word in ["first person", "contact first", "call first", "who first"]):
+                return "The emergency dispatcher who coordinates all field responses"
+            
+            elif any(word in question_lower for word in ["why", "reason", "contact them"]):
+                return "They have real-time access to crew locations and emergency protocols"
+            
+            elif any(word in question_lower for word in ["reach", "contact", "method", "phone", "radio", "communication"]):
+                return "Emergency hotline first, then supervisor's cell phone, then radio backup"
+            
+            # List Management Examples
+            elif any(word in question_lower for word in ["lists", "employee lists", "different lists"]):
+                return "Yes, we have primary on-call, backup crew, and contractor lists"
+            
+            elif any(word in question_lower for word in ["how many lists", "number of lists"]):
+                return "Three main lists: on-call technicians, backup staff, and emergency contractors"
+            
+            elif any(word in question_lower for word in ["organized", "organize", "arrangement", "structure"]):
+                return "Lists are organized by job classification and overtime hours worked"
+            
+            # Calling Process Examples
+            elif any(word in question_lower for word in ["order", "sequence", "call", "specific order"]):
+                return "Yes, we call in order of least overtime hours worked, starting with senior technicians"
+            
+            elif any(word in question_lower for word in ["doesn't answer", "says no", "refuse", "decline"]):
+                return "We move to the next person on the list and try the original person again later"
+            
+            # Backup Plans Examples
+            elif any(word in question_lower for word in ["can't get enough", "not enough people", "short staff"]):
+                return "We contact the backup list, then reach out to neighboring utility companies"
+            
+            elif any(word in question_lower for word in ["backup", "other places", "alternatives"]):
+                return "Mutual aid agreements with nearby utilities and emergency contractor services"
+            
+            # List Changes Examples
+            elif any(word in question_lower for word in ["lists change", "update", "modify"]):
+                return "Yes, we update them monthly when overtime hours reset and staff changes"
+            
+            elif any(word in question_lower for word in ["how often", "frequency", "update"]) and "list" in question_lower:
+                return "Monthly for overtime adjustments, immediately for new hires or departures"
+            
+            # Special Rules Examples
+            elif any(word in question_lower for word in ["special rules", "timing", "when", "restrictions"]):
+                return "Employees must have 8 hours rest between shifts per union agreement"
+            
+            elif any(word in question_lower for word in ["text", "email", "message", "notification"]):
+                return "Yes, we send group text alerts for major outages affecting multiple areas"
+            
+            # Advanced Topics Examples
+            elif any(word in question_lower for word in ["simultaneous", "same time", "multiple"]):
+                return "Union rules require us to call employees individually in seniority order"
+            
+            elif any(word in question_lower for word in ["tie", "equal", "same hours", "tiebreaker"]):
+                return "Seniority breaks ties, then alphabetical order by last name"
+            
+            elif any(word in question_lower for word in ["pause", "delay", "wait", "between"]):
+                return "We wait 3 minutes for a response before moving to the next person"
+            
+            elif any(word in question_lower for word in ["device", "devices", "phone", "equipment"]) and any(word in question_lower for word in ["how many", "number"]):
+                return "Each employee has a work cell phone and a backup pager"
+            
+            elif any(word in question_lower for word in ["which device", "first device", "contact first"]):
+                return "Work cell phone first, then pager after 5 minutes if no response"
+            
+            # Catch-all for any unmatched questions
+            else:
+                return self._generate_testing_fallback_example(question_lower)
+    
+    def _generate_testing_fallback_example(self, question_lower):
+        """Generate appropriate fallback examples for testing coverage."""
         
-        question_lower = last_question.lower() if last_question else ""
+        # Additional pattern matching for edge cases
+        if "vacation" in question_lower or "excuse" in question_lower:
+            return "Employees on vacation or scheduled to work within 8 hours are excused"
         
-        for keyword, example in topic_keywords.items():
-            if keyword in question_lower:
-                return example
+        elif "contractor" in question_lower:
+            return "We maintain a list of certified emergency contractors as backup"
         
-        # Fallback to AI generation
-        system_message = f"""
-        Provide a brief, specific example answer for: "{last_question}"
-        Make it realistic for a utility company. Keep it under 20 words.
-        Don't include prefixes like "Example:" - just the example text.
-        """
+        elif "supervisor" in question_lower and "contact" not in question_lower:
+            return "Field supervisors must have emergency response certification"
         
-        messages = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": "Generate the example now."}
-        ]
+        elif "location" in question_lower:
+            return "We contact our three district offices or neighboring utility regions"
         
-        response = self.get_response(messages, max_tokens=50, temperature=0.7)
-        return response.strip() if response else "We handle this based on our standard procedures."
+        elif "union" in question_lower:
+            return "Union contract requires fair rotation and adequate rest periods"
+        
+        elif "emergency" in question_lower and "type" not in question_lower:
+            return "All emergency calls take priority over scheduled maintenance work"
+        
+        else:
+            # Final fallback - still useful for testing
+            return "We follow our standard operating procedures with safety as the top priority"
 
     def _clean_and_prepare_messages(self, messages):
         """Clean and prepare messages for the API."""
