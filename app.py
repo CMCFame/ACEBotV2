@@ -85,54 +85,28 @@ except Exception as e:
     """, unsafe_allow_html=True)
 
 def check_summary_readiness():
-    """
-    UNIFIED completion checker - eliminates competing validation systems.
-    This is now the SINGLE source of truth for completion.
-    """
-    # Use the improved topic tracker validation
+    """Check if the questionnaire is ready for summary generation."""
     readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
-        # Give specific guidance instead of generic rejection
-        if "missing_topics" in readiness:
-            missing_list = readiness["missing_topics"]
-            guidance_msg = f"Let's make sure we have complete information about: {', '.join(missing_list[:3])}. "
-            
-            # Add specific follow-up based on what's missing
-            if "Calling Logistics" in missing_list:
-                guidance_msg += "Could you clarify your union rules about calling employees simultaneously?"
-            elif "Tiebreakers" in missing_list:
-                guidance_msg += "What do you use to break ties when employees have equal overtime?"
-            elif "Additional Rules" in missing_list:
-                guidance_msg += "Are there any timing rules about when employees can be called?"
-        else:
-            guidance_msg = readiness["message"]
-        
+        # Add a warning message to the user
+        warning_msg = readiness["message"]
         st.session_state.visible_messages.append({
             "role": "assistant", 
-            "content": guidance_msg
+            "content": f"I notice you'd like to see a summary, but we haven't finished covering all the necessary topics yet. {warning_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
         })
         
-        # Add system message to guide AI's next question
+        # Add a system message to guide the AI
         st.session_state.chat_history.append({
             "role": "system",
-            "content": f"User wanted summary but missing: {readiness.get('message', 'some information')}. Ask specific follow-up questions to complete coverage."
+            "content": f"User requested summary but questionnaire is not complete. {warning_msg} Continue asking questions systematically to cover all missing areas."
         })
         
         return False
     return True
 
 def handle_summary_request():
-    """
-    Simplified summary request handler - no more circular logic.
-    """
-    # First, try to auto-correct obvious validation errors
-    corrections_made = services["topic_tracker"].force_completion_check()
-    
-    if corrections_made:
-        print("Auto-corrected validation issues")
-    
-    # Now check if truly ready
+    """Handle when user requests summary or AI indicates completion."""
     if check_summary_readiness():
         st.session_state.summary_requested = True
         return True
@@ -163,51 +137,39 @@ def add_debug_section():
                 st.success("All topics reset to incomplete")
 
 def process_user_input(processed_user_input):
-    """
-    Enhanced user input processing with comprehensive answer recognition.
-    """
+    """Enhanced user input processing."""
     
-    # Check for completion signals
+    # Check for summary request
     special_message = services["ai_service"].process_special_message_types(processed_user_input)
     if special_message["type"] == "summary_request":
         if handle_summary_request():
             st.rerun()
         return
     
-    # Analyze if user provided comprehensive answer
-    covered_topics = services["ai_service"].analyze_comprehensive_answer(processed_user_input)
-    
     # Add user message to visible history
     st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
     
-    # Create smart guidance based on coverage and comprehensive answers
-    covered_count = sum(st.session_state.topic_areas_covered.values())
-    total_count = len(st.session_state.topic_areas_covered)
-    coverage_percentage = (covered_count / total_count) * 100
+    # Create enhanced prompt for the AI
+    guiding_suffix = (
+        "\n\n[SYSTEM_INSTRUCTION: Remember your primary goal is COMPLETE coverage of all 45+ questions "
+        "from the ACE questionnaire checklist. Review which questions you still need to ask. "
+        "Your response MUST follow the MANDATORY TURN STRUCTURE: "
+        "1. Brief acknowledgment of my response "
+        "2. TOPIC_UPDATE JSON if appropriate "
+        "3. Ask the next logical question from your systematic checklist. "
+        "Do not indicate completion until you have covered every single question comprehensively.]"
+    )
     
-    # Build guidance message
-    guidance_parts = [f"\n\n[SYSTEM_GUIDANCE: Progress {coverage_percentage:.0f}%."]
-    
-    if covered_topics:
-        guidance_parts.append(f"User's answer may cover: {', '.join(covered_topics)}.")
-        guidance_parts.append("Acknowledge comprehensive coverage and adapt accordingly.")
-    
-    if coverage_percentage >= 80:
-        missing_topics = [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
-        guidance_parts.append(f"Focus on final gaps: {', '.join(missing_topics)}.")
-    else:
-        guidance_parts.append("Continue with efficient, paired questions when appropriate.]")
-    
-    guiding_suffix = " ".join(guidance_parts)
     guided_user_input = processed_user_input + guiding_suffix
     st.session_state.chat_history.append({"role": "user", "content": guided_user_input})
     
     # Get AI response
     raw_ai_response = services["ai_service"].get_response(st.session_state.chat_history)
     
-    # Handle AI completion signals
+    # Handle SUMMARY_REQUEST
     if "SUMMARY_REQUEST" in raw_ai_response:
         if handle_summary_request():
+            # Add the conversation part before the summary request
             conversation_part = raw_ai_response.split("SUMMARY_REQUEST")[0].strip()
             if conversation_part:
                 st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
@@ -215,15 +177,8 @@ def process_user_input(processed_user_input):
             st.rerun()
         return
     
-    # Process TOPIC_UPDATE with better trust
-    topic_updated = services["topic_tracker"].process_topic_update(raw_ai_response)
-    
-    # If AI indicated comprehensive coverage, update multiple topics
-    if covered_topics and topic_updated:
-        for topic in covered_topics:
-            if topic in st.session_state.topic_areas_covered:
-                st.session_state.topic_areas_covered[topic] = True
-                print(f"Auto-updated {topic} based on comprehensive answer")
+    # Process TOPIC_UPDATE
+    services["topic_tracker"].process_topic_update(raw_ai_response)
     
     # Clean response for display
     topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}"
@@ -234,28 +189,18 @@ def process_user_input(processed_user_input):
         st.session_state.chat_history.append({"role": "assistant", "content": display_content})
         st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
     
-    # Smart follow-up logic
-    if not ("?" in display_content) and not st.session_state.get("summary_requested", False):
-        # Check if we're near completion
-        if coverage_percentage >= 75:
-            force_completion_check()
-        else:
-            force_next_question()
-    
-    # Update user info
-    extract_and_update_user_info(processed_user_input)
-
-def force_completion_check():
-    """Smart completion check when near end."""
-    corrections_made = services["topic_tracker"].force_completion_check()
-    readiness = services["topic_tracker"].check_summary_readiness()
-    
-    if readiness["ready"] or corrections_made:
-        completion_msg = "Based on our conversation, I believe we've covered all essential aspects of your callout process. Is there anything unique to your operations that we haven't discussed?"
-        st.session_state.chat_history.append({"role": "assistant", "content": completion_msg})
-        st.session_state.visible_messages.append({"role": "assistant", "content": completion_msg})
-    else:
+    # Force next question if none was asked
+    if not ("?" in display_content):
         force_next_question()
+    
+    # User info extraction & Question advancement
+    extract_and_update_user_info(processed_user_input)
+    
+    # Update topic tracker context
+    try:
+        services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
+    except Exception as e:
+        print(f"Warning: Error in topic tracker context update: {e}")
 
 def force_next_question():
     """Force the AI to ask the next question if it forgot to."""
@@ -279,11 +224,11 @@ def force_next_question():
         st.session_state.visible_messages.append({"role": "assistant", "content": fallback})
 
 def extract_and_update_user_info(user_input):
-    """Enhanced user info extraction with smarter advancement."""
+    """Extract user info if not already captured."""
     current_q_idx = st.session_state.get("current_question_index", 0)
     
-    # Extract user info early in conversation
-    if len(st.session_state.get("responses", [])) <= 2 and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
+    # Only extract user info if it's not already captured and it's early in the conversation
+    if len(st.session_state.get("responses", [])) == 0 and not (st.session_state.user_info.get("name") or st.session_state.user_info.get("company")):
         user_info_data = services["ai_service"].extract_user_info(user_input)
         if user_info_data and (user_info_data.get("name") or user_info_data.get("company")):
             st.session_state.user_info = user_info_data
@@ -291,48 +236,51 @@ def extract_and_update_user_info(user_input):
             if not any(m.get("content") == user_context_msg for m in st.session_state.chat_history if m.get("role")=="system"):
                 st.session_state.chat_history.append({"role": "system", "content": user_context_msg})
     
-    # Smart response tracking
+    # Update response tracking
     questions_list = st.session_state.get("questions", [])
-    if current_q_idx < len(questions_list):
-        last_ai_msg = ""
-        if st.session_state.visible_messages and st.session_state.visible_messages[-2]['role'] == 'assistant':
-            last_ai_msg = st.session_state.visible_messages[-2]['content']
+    current_official_question_text = st.session_state.get("current_question", questions_list[0] if questions_list else "")
+    
+    if current_q_idx < len(questions_list) and current_official_question_text:
+        # Use the last AI message shown to user as context for check_response_type
+        last_ai_msg_for_check = ""
+        if st.session_state.visible_messages and st.session_state.visible_messages[-1]['role'] == 'assistant':
+            last_ai_msg_for_check = st.session_state.visible_messages[-1]['content']
         
-        is_answer = services["ai_service"].check_response_type(last_ai_msg, user_input)
+        is_answer = services["ai_service"].check_response_type(last_ai_msg_for_check or current_official_question_text, user_input)
         
-        if is_answer and len(user_input.strip()) > 10:  # Substantial answers only
-            current_question = questions_list[current_q_idx] if current_q_idx < len(questions_list) else "General discussion"
-            st.session_state.responses.append((current_question, user_input))
+        if is_answer:
+            st.session_state.responses.append((current_official_question_text, user_input))
             st.session_state.current_question_index += 1
-            
             if st.session_state.current_question_index < len(questions_list):
                 st.session_state.current_question = questions_list[st.session_state.current_question_index]
+            else: 
+                # End of official questions list, but don't auto-trigger summary
+                pass
 
 def display_enhanced_completion_ui():
-    """
-    Simplified completion UI - no more competing validation.
-    """
+    """Enhanced completion UI with better summary validation."""
     if not st.session_state.get("summary_requested", False):
         return
     
-    # One final validation check
+    # Check readiness one more time
     readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
-        st.warning(f"Almost complete! Just need: {readiness['message']}")
+        st.warning(f"Summary requested but questionnaire is not complete: {readiness['message']}")
         if st.button("Continue Questionnaire"):
             st.session_state.summary_requested = False
             st.rerun()
         return
     
-    # Generate and display summary
+    # Generate summary
     summary_text = services["summary_generator"].generate_conversation_summary()
     responses_list = services["summary_generator"].get_responses_as_list()
     
+    # Show completion message
     st.success("✅ Questionnaire completed successfully!")
-    st.info(f"Captured {len(responses_list)} question-answer pairs covering all essential topics.")
+    st.info(f"Captured {len(responses_list)} question-answer pairs covering all major topic areas.")
     
-    # Rest of completion UI stays the same...
+    # Display summary in expandable section
     with st.expander("📋 View Complete Summary", expanded=True):
         st.text_area("Summary", summary_text, height=400)
     
