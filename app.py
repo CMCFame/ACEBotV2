@@ -12,7 +12,7 @@ st.set_page_config(
 # Now we can import other dependencies
 import os
 import json
-import re # Import regex module
+import re
 from datetime import datetime
 
 # Continue with other imports
@@ -42,7 +42,7 @@ def create_example_html(example_text, question_text):
           <p style="margin: 8px 0 0 0; color: #533f03; font-style: italic; line-height: 1.5;">{example_text}</p>
         </div>
         <div style="background-color: #e8f4ff; border-radius: 10px; padding: 15px; border: 1px solid #d1ecf1; border-left: 5px solid #007bff;">
-          <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Question</p>
+          <p style="margin: 0; font-weight: 600; color: #004085; font-size: 15px;">❓ Next Question</p>
           <p style="margin: 8px 0 0 0; color: #0c5460; line-height: 1.5;">{question_text}</p>
         </div>
       </div>
@@ -89,17 +89,15 @@ def check_summary_readiness():
     readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
-        # Add a warning message to the user
         warning_msg = readiness["message"]
         st.session_state.visible_messages.append({
             "role": "assistant", 
-            "content": f"I notice you'd like to see a summary, but we haven't finished covering all the necessary topics yet. {warning_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
+            "content": f"I notice you'd like to see a summary, but let's make sure we have comprehensive coverage. {warning_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
         })
         
-        # Add a system message to guide the AI
         st.session_state.chat_history.append({
             "role": "system",
-            "content": f"User requested summary but questionnaire is not complete. {warning_msg} Continue asking questions systematically to cover all missing areas."
+            "content": f"User requested summary but questionnaire needs more coverage. {warning_msg} Continue asking questions systematically to cover missing areas."
         })
         
         return False
@@ -114,10 +112,19 @@ def handle_summary_request():
 
 def add_debug_section():
     """Add debug section in sidebar for development."""
-    if st.secrets.get("DEBUG_MODE", False):  # Only show in debug mode
+    if st.secrets.get("DEBUG_MODE", False):
         with st.sidebar:
             st.markdown("---")
             st.markdown("### Debug Controls")
+            
+            # Show loop detection status
+            loop_count = len(st.session_state.get("conversation_loop_detector", []))
+            st.write(f"Loop detector entries: {loop_count}")
+            
+            # Show answered questions
+            answered_count = len(st.session_state.get("answered_questions", set()))
+            total_questions = len(st.session_state.get("questions", []))
+            st.write(f"Questions answered: {answered_count}/{total_questions}")
             
             if st.button("🔍 Debug Q&A Extraction"):
                 summary_gen = services["summary_generator"]
@@ -131,13 +138,25 @@ def add_debug_section():
                 coverage = st.session_state.get("topic_areas_covered", {})
                 for topic, status in coverage.items():
                     st.write(f"{topic}: {'✅' if status else '❌'}")
-            
-            if st.button("🔄 Reset Topic Coverage"):
-                services["topic_tracker"].force_topic_reset()
-                st.success("All topics reset to incomplete")
 
 def process_user_input(processed_user_input):
-    """Enhanced user input processing."""
+    """Enhanced user input processing with loop detection."""
+    
+    # Check for conversation loops FIRST
+    last_ai_response = ""
+    if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
+        last_ai_response = st.session_state.visible_messages[-1]["content"]
+    
+    is_loop = services["topic_tracker"].detect_conversation_loop(processed_user_input, last_ai_response)
+    
+    if is_loop:
+        # Break the loop by forcing next question
+        loop_break_response = services["topic_tracker"].break_loop_with_next_question()
+        st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
+        st.session_state.visible_messages.append({"role": "assistant", "content": loop_break_response})
+        st.session_state.chat_history.append({"role": "user", "content": processed_user_input})
+        st.session_state.chat_history.append({"role": "assistant", "content": loop_break_response})
+        return
     
     # Check for summary request
     special_message = services["ai_service"].process_special_message_types(processed_user_input)
@@ -146,18 +165,22 @@ def process_user_input(processed_user_input):
             st.rerun()
         return
     
+    # Mark question as answered if this is a substantial response
+    current_q_idx = st.session_state.get("current_question_index", 0)
+    services["topic_tracker"].mark_question_answered(current_q_idx, processed_user_input)
+    
     # Add user message to visible history
     st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
     
-    # Create enhanced prompt for the AI
+    # Create enhanced prompt for the AI with loop prevention
     guiding_suffix = (
-        "\n\n[SYSTEM_INSTRUCTION: Remember your primary goal is COMPLETE coverage of all 45+ questions "
-        "from the ACE questionnaire checklist. Review which questions you still need to ask. "
-        "Your response MUST follow the MANDATORY TURN STRUCTURE: "
-        "1. Brief acknowledgment of my response "
+        "\n\n[SYSTEM_INSTRUCTION: Continue your systematic coverage of the ACE questionnaire. "
+        "If the user just requested an example, provide it briefly and then ask the NEXT question "
+        "from your checklist - do NOT repeat the same question. Focus on moving forward through "
+        "uncovered topics. Your response MUST follow the MANDATORY TURN STRUCTURE: "
+        "1. Brief acknowledgment of response "
         "2. TOPIC_UPDATE JSON if appropriate "
-        "3. Ask the next logical question from your systematic checklist. "
-        "Do not indicate completion until you have covered every single question comprehensively.]"
+        "3. Ask the next logical question from your systematic checklist.]"
     )
     
     guided_user_input = processed_user_input + guiding_suffix
@@ -169,7 +192,6 @@ def process_user_input(processed_user_input):
     # Handle SUMMARY_REQUEST
     if "SUMMARY_REQUEST" in raw_ai_response:
         if handle_summary_request():
-            # Add the conversation part before the summary request
             conversation_part = raw_ai_response.split("SUMMARY_REQUEST")[0].strip()
             if conversation_part:
                 st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
@@ -189,18 +211,12 @@ def process_user_input(processed_user_input):
         st.session_state.chat_history.append({"role": "assistant", "content": display_content})
         st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
     
-    # Force next question if none was asked
+    # Force next question if none was asked (prevent getting stuck)
     if not ("?" in display_content):
         force_next_question()
     
     # User info extraction & Question advancement
     extract_and_update_user_info(processed_user_input)
-    
-    # Update topic tracker context
-    try:
-        services["topic_tracker"].update_ai_context_after_answer(processed_user_input)
-    except Exception as e:
-        print(f"Warning: Error in topic tracker context update: {e}")
 
 def force_next_question():
     """Force the AI to ask the next question if it forgot to."""
@@ -218,8 +234,8 @@ def force_next_question():
         st.session_state.chat_history.append({"role": "assistant", "content": next_question})
         st.session_state.visible_messages.append({"role": "assistant", "content": next_question})
     else:
-        # Fallback question
-        fallback = "Could you please provide more details about your callout process?"
+        # Use topic tracker to get next question
+        fallback = services["topic_tracker"].break_loop_with_next_question()
         st.session_state.chat_history.append({"role": "assistant", "content": fallback})
         st.session_state.visible_messages.append({"role": "assistant", "content": fallback})
 
@@ -241,7 +257,6 @@ def extract_and_update_user_info(user_input):
     current_official_question_text = st.session_state.get("current_question", questions_list[0] if questions_list else "")
     
     if current_q_idx < len(questions_list) and current_official_question_text:
-        # Use the last AI message shown to user as context for check_response_type
         last_ai_msg_for_check = ""
         if st.session_state.visible_messages and st.session_state.visible_messages[-1]['role'] == 'assistant':
             last_ai_msg_for_check = st.session_state.visible_messages[-1]['content']
@@ -253,9 +268,6 @@ def extract_and_update_user_info(user_input):
             st.session_state.current_question_index += 1
             if st.session_state.current_question_index < len(questions_list):
                 st.session_state.current_question = questions_list[st.session_state.current_question_index]
-            else: 
-                # End of official questions list, but don't auto-trigger summary
-                pass
 
 def display_enhanced_completion_ui():
     """Enhanced completion UI with better summary validation."""
@@ -266,7 +278,7 @@ def display_enhanced_completion_ui():
     readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
-        st.warning(f"Summary requested but questionnaire is not complete: {readiness['message']}")
+        st.warning(f"Summary requested but questionnaire needs more coverage: {readiness['message']}")
         if st.button("Continue Questionnaire"):
             st.session_state.summary_requested = False
             st.rerun()
@@ -323,13 +335,33 @@ def display_enhanced_completion_ui():
         st.session_state.completion_email_sent = True
 
 def add_sidebar_ui():
-    """Add the sidebar UI elements."""
+    """Add the sidebar UI elements with KPI dashboard."""
     with st.sidebar:
         st.markdown("""
             <div style="text-align: center; margin-bottom: 25px;">
                 <img src="https://www.publicpower.org/sites/default/files/logo-arcos_0.png"
                      alt="ARCOS Logo" style="max-width: 80%; height: auto; margin: 10px auto;" />
             </div>
+        """, unsafe_allow_html=True)
+        
+        # KPI Dashboard
+        progress_data = services["topic_tracker"].get_progress_data()
+        st.markdown("### 📊 Progress Dashboard")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Completion", f"{progress_data['percentage']}%")
+        with col2:
+            st.metric("Topics", f"{progress_data['covered_count']}/{progress_data['total_count']}")
+        
+        if 'questions_answered' in progress_data:
+            st.metric("Questions Answered", progress_data['questions_answered'])
+        
+        # Show loop detection status if in debug mode
+        if st.secrets.get("DEBUG_MODE", False):
+            loop_entries = len(st.session_state.get("conversation_loop_detector", []))
+            st.metric("Loop Entries", loop_entries)
+
+        st.markdown("""
             <div style="text-align: center;">
                 <h3 style="color: var(--primary-red); margin-bottom: 10px;">
                     <i>Save & Resume Progress</i>
@@ -359,26 +391,7 @@ def add_sidebar_ui():
             else:
                 st.error(result["message"])
         
-        if st.button("📊 View Progress Dashboard", key="view_progress_button"): 
-            dashboard_content = services["summary_generator"].generate_progress_dashboard()
-            st.session_state.show_dashboard = True
-            st.session_state.dashboard_content = dashboard_content
-            st.rerun()
-
-        if st.session_state.get("show_dashboard", False):
-            with st.expander("Progress Dashboard", expanded=True):
-                st.markdown(st.session_state.get("dashboard_content", "Could not load dashboard content."))
-                st.download_button(
-                    label="📥 Download Progress Report",
-                    data=st.session_state.get("dashboard_content", ""),
-                    file_name=f"ace_progress_report_{datetime.now().strftime('%Y%m%d')}.md",
-                    mime="text/markdown",
-                    key="download_report_button"
-                )
-                if st.button("Close Dashboard", key="close_dashboard_button"): 
-                    st.session_state.show_dashboard = False
-                    st.rerun()
-
+        # Resume functionality
         st.markdown("---")
         st.markdown("### Resume Progress")
         st.markdown("#### Resume from Server")
@@ -410,6 +423,44 @@ def add_sidebar_ui():
         
         # Add debug section
         add_debug_section()
+
+def handle_example_request_with_progression():
+    """Handle example requests while ensuring progression."""
+    last_question_context = st.session_state.get("current_question", "the current topic")
+    if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
+        assistant_last_msg_content = st.session_state.visible_messages[-1]["content"]
+        if "To continue with our question:" in assistant_last_msg_content:
+            last_question_context = assistant_last_msg_content.split("To continue with our question:")[-1].strip()
+        elif "?" in assistant_last_msg_content:
+            last_question_context = assistant_last_msg_content
+
+    if last_question_context:
+        example_text_content = services["ai_service"].get_example_response(last_question_context)
+        
+        # Get NEXT question for progression
+        current_q_idx = st.session_state.get("current_question_index", 0)
+        questions_list = st.session_state.get("questions", [])
+        next_question = "Let's continue with the next aspect of your callout process."
+        
+        if current_q_idx + 1 < len(questions_list):
+            next_question = questions_list[current_q_idx + 1]
+        
+        formatted_example_display = create_example_html(example_text_content, next_question)
+        
+        st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
+        st.session_state.visible_messages.append({"role": "assistant", "content": formatted_example_display})
+        
+        # Update current question index to move forward
+        st.session_state.current_question_index = min(current_q_idx + 1, len(questions_list) - 1)
+        if st.session_state.current_question_index < len(questions_list):
+            st.session_state.current_question = questions_list[st.session_state.current_question_index]
+        
+        history_example_text = f"Example: {example_text_content}\n\nNext question:\n{next_question}"
+        st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
+        st.session_state.chat_history.append({"role": "assistant", "content": history_example_text})
+        
+        return True
+    return False
 
 def main():
     """Main application function."""
@@ -501,27 +552,10 @@ def main():
                 st.session_state.chat_history.append({"role": "assistant", "content": help_response_content})
                 st.rerun()
             
-            # Handle example button click
+            # Handle example button click with progression
             if st.session_state.example_button_clicked:
                 st.session_state.example_button_clicked = False
-                last_question_context = st.session_state.get("current_question", "the current topic")
-                if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
-                    assistant_last_msg_content = st.session_state.visible_messages[-1]["content"]
-                    if "To continue with our question:" in assistant_last_msg_content:
-                        last_question_context = assistant_last_msg_content.split("To continue with our question:")[-1].strip()
-                    elif "?" in assistant_last_msg_content:
-                        last_question_context = assistant_last_msg_content
-                
-                if last_question_context:
-                    example_text_content = services["ai_service"].get_example_response(last_question_context)
-                    formatted_example_display = create_example_html(example_text_content, last_question_context)
-                    
-                    st.session_state.visible_messages.append({"role": "user", "content": "Can you show me an example?"})
-                    st.session_state.visible_messages.append({"role": "assistant", "content": formatted_example_display})
-                    
-                    history_example_text = f"Example: {example_text_content}\n\nTo continue with our question:\n{last_question_context}"
-                    st.session_state.chat_history.append({"role": "user", "content": "Can you show me an example?"})
-                    st.session_state.chat_history.append({"role": "assistant", "content": history_example_text})
+                if handle_example_request_with_progression():
                     st.rerun()
                 else:
                     st.error("Could not determine the current question to provide an example for.")

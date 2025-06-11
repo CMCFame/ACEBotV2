@@ -10,7 +10,94 @@ class TopicTracker:
         # Initialize if not already in session state
         if 'topic_areas_covered' not in st.session_state:
             st.session_state.topic_areas_covered = {topic: False for topic in TOPIC_AREAS.keys()}
+        
+        # Add loop detection (NEW)
+        if 'conversation_loop_detector' not in st.session_state:
+            st.session_state.conversation_loop_detector = []
+        
+        # Add answered questions tracking for better completion detection (NEW)
+        if 'answered_questions' not in st.session_state:
+            st.session_state.answered_questions = set()
+            
+        # Add example tracking to prevent loops (NEW)
+        if 'last_example_question' not in st.session_state:
+            st.session_state.last_example_question = None
     
+    # NEW: Loop detection functionality
+    def detect_conversation_loop(self, user_input, last_ai_response):
+        """Detect if we're in a conversation loop."""
+        # Clean inputs for comparison
+        user_clean = user_input.lower().strip()
+        ai_clean = last_ai_response.lower().strip()[:200]  # First 200 chars
+        
+        current_exchange = (user_clean, ai_clean)
+        st.session_state.conversation_loop_detector.append(current_exchange)
+        
+        # Keep only last 8 exchanges
+        if len(st.session_state.conversation_loop_detector) > 8:
+            st.session_state.conversation_loop_detector.pop(0)
+        
+        # Check for loops - if last 3 exchanges are very similar
+        if len(st.session_state.conversation_loop_detector) >= 3:
+            recent_exchanges = st.session_state.conversation_loop_detector[-3:]
+            
+            # Check for example loop specifically
+            example_requests = ["example", "show example", "can you show me an example"]
+            if all(any(req in ex[0] for req in example_requests) for ex in recent_exchanges):
+                return True
+                
+            # Check for identical exchanges
+            if all(ex == recent_exchanges[0] for ex in recent_exchanges):
+                return True
+        
+        return False
+    
+    # NEW: Force progression when stuck in loop
+    def break_loop_with_next_question(self):
+        """Force progression to next unanswered question."""
+        # Find next critical question that hasn't been answered
+        questions = st.session_state.get("questions", [])
+        current_idx = st.session_state.get("current_question_index", 0)
+        
+        # Try to advance to next question
+        if current_idx + 1 < len(questions):
+            next_question = questions[current_idx + 1]
+            st.session_state.current_question_index = current_idx + 1
+            st.session_state.current_question = next_question
+            return f"I notice we may be repeating ourselves. Let's move forward with the next question:\n\n{next_question}"
+        
+        # If we're near the end, check what's still missing
+        return self._force_topic_completion_check()
+    
+    # NEW: Enhanced force completion check
+    def _force_topic_completion_check(self):
+        """Force a completion check when we might be done."""
+        missing_topics = [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
+        
+        if not missing_topics:
+            return "Excellent! It looks like we've covered all the essential topics comprehensively. Let me prepare your summary."
+        else:
+            # Pick the most important missing topic
+            priority_topics = ["contact_process", "list_management", "insufficient_staffing"]
+            next_topic = None
+            
+            for priority in priority_topics:
+                if not st.session_state.topic_areas_covered.get(priority, False):
+                    next_topic = TOPIC_AREAS.get(priority)
+                    break
+            
+            if not next_topic and missing_topics:
+                next_topic = missing_topics[0]
+            
+            return f"We still need to cover some important areas. Let me ask you about {next_topic}."
+    
+    # NEW: Mark individual questions as answered
+    def mark_question_answered(self, question_index, user_response):
+        """Mark a specific question as answered."""
+        if len(user_response.strip()) > 10:  # Substantial response
+            st.session_state.answered_questions.add(question_index)
+    
+    # ORIGINAL: Process topic update messages from the AI with improved validation
     def process_topic_update(self, message_content):
         """
         Process topic update messages from the AI with more validation.
@@ -30,7 +117,7 @@ class TopicTracker:
             
             topic_updates = json.loads(json_str)
             
-            # Validate updates before applying them
+            # Validate updates before applying them - ENHANCED
             validated_updates = self._validate_topic_updates(topic_updates)
             
             # Update the session state with validated updates only
@@ -51,10 +138,11 @@ class TopicTracker:
             print(f"Error processing topic update: {e}")
             return True  # Still return True to hide the malformed update
     
+    # ORIGINAL but ENHANCED: Validate topic updates with more lenient criteria
     def _validate_topic_updates(self, topic_updates):
         """
         Validate topic updates to ensure they're not prematurely marked complete.
-        Only mark a topic complete if we have substantial evidence.
+        Enhanced to be more lenient while still maintaining quality.
         """
         validated = {}
         conversation_text = self._get_conversation_text()
@@ -64,7 +152,7 @@ class TopicTracker:
                 validated[topic] = status
                 continue
                 
-            # For marking as complete, validate we have sufficient coverage
+            # For marking as complete, use enhanced validation
             if self._has_sufficient_coverage(topic, conversation_text):
                 validated[topic] = status
             else:
@@ -74,43 +162,85 @@ class TopicTracker:
         
         return validated
     
+    # ENHANCED: More lenient but still thorough coverage check
     def _has_sufficient_coverage(self, topic, conversation_text):
         """
         Check if a topic has sufficient coverage to be marked complete.
+        Enhanced to be more lenient while maintaining quality.
         """
-        # Define minimum requirements for each topic
+        # Define minimum requirements for each topic - ENHANCED
         requirements = {
-            "basic_info": ["name", "company", ("callout" or "situation" or "type")],
-            "staffing_details": ["employee", "staff", "number", ("role" or "classification")],
-            "contact_process": ["call first", "contact", "device", "why"],
-            "list_management": ["list", ("straight" or "skip" or "order"), "based on"],
-            "insufficient_staffing": ["required number", ("different list" or "whole list" or "not enough")],
-            "calling_logistics": ["simultaneous", ("same time" or "call again")],
-            "list_changes": ["change", ("over time" or "update")],
-            "tiebreakers": ["tie", ("overtime" or "seniority")],
-            "additional_rules": [("email" or "text"), ("rule" or "prevent" or "excuse")]
+            "basic_info": [
+                ["name", "company"], 
+                ["callout", "situation", "type", "outage", "emergency"]
+            ],
+            "staffing_details": [
+                ["employee", "staff", "people", "person"], 
+                ["number", "how many", "required", "need"]
+            ],
+            "contact_process": [
+                ["call", "contact", "reach", "phone"], 
+                ["first", "who", "initially"],
+                ["device", "phone", "cell", "mobile"]
+            ],
+            "list_management": [
+                ["list", "group", "roster"], 
+                ["order", "sequence", "how", "method"],
+                ["based on", "organized", "sorted"]
+            ],
+            "insufficient_staffing": [
+                ["not enough", "insufficient", "short", "can't get"], 
+                ["different list", "whole list", "again", "other"]
+            ],
+            "calling_logistics": [
+                ["simultaneous", "same time", "together", "all at once"],
+                ["call again", "second pass", "retry"]
+            ],
+            "list_changes": [
+                ["change", "update", "modify", "alter"], 
+                ["over time", "when", "how often"]
+            ],
+            "tiebreakers": [
+                ["tie", "equal", "same"], 
+                ["overtime", "seniority", "hours", "experience"]
+            ],
+            "additional_rules": [
+                ["rule", "policy", "regulation"], 
+                ["email", "text", "message", "notification"],
+                ["shift", "work", "schedule", "excuse"]
+            ]
         }
         
         if topic not in requirements:
             return True  # Unknown topic, allow it
         
-        required_terms = requirements[topic]
-        found_terms = 0
+        topic_requirements = requirements[topic]
+        groups_satisfied = 0
         
-        for term in required_terms:
-            if isinstance(term, tuple):
-                # OR condition - any of the terms in the tuple
-                if any(t in conversation_text for t in term):
-                    found_terms += 1
-            else:
-                # Single term
-                if term in conversation_text:
-                    found_terms += 1
+        # Check each group of requirements
+        for requirement_group in topic_requirements:
+            group_satisfied = False
+            for term in requirement_group:
+                if term.lower() in conversation_text.lower():
+                    group_satisfied = True
+                    break
+            if group_satisfied:
+                groups_satisfied += 1
         
-        # Require at least 60% of terms to be present
-        coverage_ratio = found_terms / len(required_terms)
-        return coverage_ratio >= 0.6
+        # Need at least 60% of requirement groups satisfied
+        coverage_ratio = groups_satisfied / len(topic_requirements)
+        is_sufficient = coverage_ratio >= 0.6
+        
+        # ENHANCED: Also check individual question tracking
+        answered_count = len(st.session_state.answered_questions)
+        questions_count = len(st.session_state.get("questions", []))
+        
+        if answered_count >= questions_count * 0.5:  # If 50%+ questions answered
+            return True  # Be more lenient
+            
+        return is_sufficient
     
+    # ORIGINAL: Get conversation text for analysis
     def _get_conversation_text(self):
         """Get all conversation text for analysis."""
         messages = st.session_state.get("visible_messages", [])
@@ -124,16 +254,26 @@ class TopicTracker:
         
         return " ".join(text_parts)
     
+    # ENHANCED: Check completion status with dual criteria
     def _check_completion_status(self):
         """Check if all topics are covered and trigger appropriate actions."""
         # Count covered topics
         covered_count = sum(st.session_state.topic_areas_covered.values())
         total_topics = len(st.session_state.topic_areas_covered)
         
-        print(f"Topic coverage: {covered_count}/{total_topics}")
+        # Also consider individual questions
+        answered_count = len(st.session_state.answered_questions)
+        questions_count = len(st.session_state.get("questions", []))
         
-        # Only warn about missing topics if we're at 70%+ completion
-        if covered_count >= (total_topics * 0.7):
+        print(f"Topic coverage: {covered_count}/{total_topics}")
+        print(f"Question coverage: {answered_count}/{questions_count}")
+        
+        # Enhanced completion criteria
+        topic_pct = covered_count / total_topics
+        question_pct = answered_count / max(questions_count, 1)
+        
+        # Only warn about missing topics if we're at 70%+ completion OR 60%+ questions answered
+        if topic_pct >= 0.7 or question_pct >= 0.6:
             missing_topics = [t for t, v in st.session_state.topic_areas_covered.items() if not v]
             if missing_topics:
                 # Add system message to explicitly ask about missing topics
@@ -151,6 +291,7 @@ class TopicTracker:
                     st.session_state.chat_history.append(system_message)
                     print(f"Added system message about missing topics: {missing_topics_str}")
     
+    # ORIGINAL: Check critical questions for covered topics
     def _check_critical_questions(self):
         """Check if critical questions for covered topics have been asked."""
         conversation_text = self._get_conversation_text()
@@ -166,7 +307,7 @@ class TopicTracker:
                     # Check if most key words from the question appear in conversation
                     matches = sum(1 for word in question_words if len(word) > 3 and word in conversation_text)
                     
-                    if matches < len(question_words) * 0.5:  # Less than 50% of words found
+                    if matches < len(question_words) * 0.4:  # Less than 40% of words found
                         missing_questions.append(question)
                 
                 if missing_questions:
@@ -184,84 +325,127 @@ class TopicTracker:
                         st.session_state.chat_history.append(system_message)
                         print(f"Added system message about missing critical questions for {topic}")
     
+    # ENHANCED: More lenient summary readiness check
     def check_summary_readiness(self):
         """
         Check if the questionnaire is ready for summary generation.
-        More strict validation before allowing summary.
+        Enhanced with dual criteria and more lenient validation.
         """
         # Check if all topics are covered
-        all_topics_covered = all(st.session_state.topic_areas_covered.values())
+        covered_count = sum(st.session_state.topic_areas_covered.values())
+        total_topics = len(st.session_state.topic_areas_covered)
         
-        if not all_topics_covered:
-            missing_topics = [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
+        # Check individual questions
+        answered_count = len(st.session_state.answered_questions)
+        questions_count = len(st.session_state.get("questions", []))
+        
+        topic_pct = covered_count / total_topics
+        question_pct = answered_count / max(questions_count, 1)
+        
+        # Enhanced completion criteria - multiple ways to be "ready"
+        if topic_pct >= 1.0:  # All topics covered
             return {
-                "ready": False,
-                "missing_topics": missing_topics,
-                "message": f"The following topics still need to be covered: {', '.join(missing_topics)}"
+                "ready": True,
+                "message": f"Perfect! All {total_topics} topic areas have been covered comprehensively."
             }
         
-        # Check minimum number of Q&A pairs
-        from modules.summary import SummaryGenerator
-        summary_gen = SummaryGenerator()
-        qa_pairs = summary_gen._extract_qa_pairs_from_visible_messages()
-        
-        if len(qa_pairs) < 15:  # Minimum threshold
+        if topic_pct >= 0.8 and question_pct >= 0.6:  # 80% topics + 60% questions
             return {
-                "ready": False,
-                "message": f"Only {len(qa_pairs)} questions have been answered. Need more comprehensive coverage before generating summary."
+                "ready": True,
+                "message": f"Great progress! You've covered {covered_count}/{total_topics} topic areas and answered {answered_count} questions."
+            }
+            
+        if question_pct >= 0.8:  # 80% of individual questions answered
+            return {
+                "ready": True,
+                "message": f"Excellent! You've answered {answered_count}/{questions_count} questions comprehensively."
             }
         
-        # Check for critical question coverage
-        conversation_text = self._get_conversation_text()
-        missing_critical = []
+        # Not ready yet
+        missing_topics = [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
         
-        for topic, questions in CRITICAL_QUESTIONS.items():
-            if st.session_state.topic_areas_covered.get(topic, False):
-                for question in questions:
-                    question_words = question.lower().split()
-                    matches = sum(1 for word in question_words if len(word) > 3 and word in conversation_text)
-                    
-                    if matches < len(question_words) * 0.4:
-                        missing_critical.append(f"{TOPIC_AREAS[topic]}: {question}")
-        
-        if missing_critical:
+        if not missing_topics:
             return {
                 "ready": False,
-                "missing_questions": missing_critical[:5],  # Show first 5
-                "message": f"Critical questions still need to be addressed: {'; '.join(missing_critical[:3])}"
+                "message": f"Only {len(self._extract_qa_pairs_from_conversation())} questions have been answered. Need more comprehensive coverage before generating summary."
             }
         
-        # All checks passed
         return {
-            "ready": True,
-            "message": "All topics and critical questions have been covered. Ready for summary."
+            "ready": False,
+            "missing_topics": missing_topics[:3],  # Show max 3
+            "message": f"We still need to cover: {', '.join(missing_topics[:3])}"
         }
     
-    def get_progress_percentage(self):
-        """Calculate the current progress percentage based on topic coverage."""
-        covered_topics = sum(st.session_state.topic_areas_covered.values())
-        total_topics = len(st.session_state.topic_areas_covered)
-        return int((covered_topics / total_topics) * 100)
+    # HELPER: Extract Q&A pairs from conversation
+    def _extract_qa_pairs_from_conversation(self):
+        """Extract question-answer pairs from the conversation."""
+        qa_pairs = []
+        visible_messages = st.session_state.get("visible_messages", [])
+        
+        i = 0
+        while i < len(visible_messages) - 1:
+            current_msg = visible_messages[i]
+            next_msg = visible_messages[i + 1]
+            
+            if (current_msg.get("role") == "assistant" and 
+                next_msg.get("role") == "user" and
+                "?" in current_msg.get("content", "")):
+                
+                question = current_msg.get("content", "")
+                answer = next_msg.get("content", "")
+                
+                # Clean the question
+                if "?" in question:
+                    question = question.split("?")[0] + "?"
+                
+                # Skip very short answers or command-like responses
+                if len(answer.split()) >= 3:
+                    qa_pairs.append((question, answer))
+            
+            i += 1
+        
+        return qa_pairs
     
+    # ORIGINAL: Calculate progress percentage with enhancement
+    def get_progress_percentage(self):
+        """Calculate the current progress percentage based on topic coverage and questions."""
+        topic_progress = sum(st.session_state.topic_areas_covered.values()) / len(st.session_state.topic_areas_covered)
+        
+        # Also factor in individual question progress
+        answered_count = len(st.session_state.answered_questions)
+        questions_count = len(st.session_state.get("questions", []))
+        question_progress = answered_count / max(questions_count, 1)
+        
+        # Use weighted average: 70% topics, 30% individual questions
+        combined_progress = (topic_progress * 0.7) + (question_progress * 0.3)
+        return int(combined_progress * 100)
+    
+    # ENHANCED: Get detailed progress data for UI display
     def get_progress_data(self):
         """Get detailed progress data for UI display."""
         covered_topics = sum(st.session_state.topic_areas_covered.values())
         total_topics = len(st.session_state.topic_areas_covered)
+        answered_count = len(st.session_state.answered_questions)
         
         return {
-            "percentage": int((covered_topics / total_topics) * 100),
+            "percentage": self.get_progress_percentage(),
             "covered_count": covered_topics,
             "total_count": total_topics,
             "covered_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if v],
-            "missing_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v]
+            "missing_topics": [TOPIC_AREAS[t] for t, v in st.session_state.topic_areas_covered.items() if not v],
+            "questions_answered": answered_count,
+            "total_questions": len(st.session_state.get("questions", [])),
+            "loop_detections": len(st.session_state.get("conversation_loop_detector", []))
         }
     
+    # ORIGINAL: Force reset for debugging
     def force_topic_reset(self):
         """Force reset of all topics to incomplete - for debugging."""
         for topic in st.session_state.topic_areas_covered:
             st.session_state.topic_areas_covered[topic] = False
         print("All topics reset to incomplete")
     
+    # ORIGINAL: Manual topic update for debugging
     def manual_topic_update(self, topic_updates):
         """Manually update topic coverage - for debugging."""
         for topic, status in topic_updates.items():
@@ -269,6 +453,7 @@ class TopicTracker:
                 st.session_state.topic_areas_covered[topic] = status
                 print(f"Manually updated {topic} to {status}")
     
+    # ENHANCED: Update AI context after each user answer
     def update_ai_context_after_answer(self, user_input):
         """Update AI context after each user answer to prevent circular questioning."""
         try:
@@ -316,36 +501,104 @@ class TopicTracker:
                                 }
                                 st.session_state.chat_history.append(context_msg)
                                 
+                                # Mark questions as answered
+                                for q_idx in matched_questions:
+                                    self.mark_question_answered(q_idx, user_input)
+                                
                                 # Also check if this completes a topic
                                 self._update_topic_coverage_from_answer(question_asked, last_msg.get("content", ""))
         except Exception as e:
             print(f"Error in update_ai_context_after_answer: {e}")
             # Don't raise the exception, just log it and continue
     
+    # ENHANCED: Update topic coverage from answers
     def _update_topic_coverage_from_answer(self, question, answer):
         """Update topic coverage based on answers to key questions."""
         try:
             combined_text = (str(question) + " " + str(answer)).lower()
             
-            # Map of key phrases to topics they complete
+            # Enhanced map of key phrases to topics they complete
             completion_phrases = {
+                # Basic info
+                "name": "basic_info",
+                "company": "basic_info",
+                "callout": "basic_info",
+                "situation": "basic_info",
+                
+                # Staffing
+                "employees": "staffing_details",
+                "how many": "staffing_details",
+                "staff": "staffing_details",
+                "roles": "staffing_details",
+                
+                # Contact process
+                "call first": "contact_process",
                 "contact first": "contact_process",
-                "devices have": "contact_process", 
-                "call straight down": "list_management",
-                "skip those who are on": "list_management",
-                "call neighboring district": "insufficient_staffing",
-                "call all devices simultaneously": "calling_logistics",
-                "lists update": "list_changes",
-                "seniority is used as": "tiebreakers",
-                "hours of rest": "additional_rules"
+                "devices": "contact_process",
+                "phone": "contact_process",
+                
+                # List management
+                "straight down": "list_management",
+                "skip": "list_management",
+                "list": "list_management",
+                "order": "list_management",
+                
+                # Insufficient staffing
+                "required number": "insufficient_staffing",
+                "not enough": "insufficient_staffing",
+                "different list": "insufficient_staffing",
+                "whole list": "insufficient_staffing",
+                
+                # Calling logistics
+                "simultaneous": "calling_logistics",
+                "same time": "calling_logistics",
+                "call again": "calling_logistics",
+                
+                # List changes
+                "change": "list_changes",
+                "update": "list_changes",
+                "over time": "list_changes",
+                
+                # Tiebreakers
+                "tie": "tiebreakers",
+                "overtime": "tiebreakers",
+                "seniority": "tiebreakers",
+                
+                # Additional rules
+                "email": "additional_rules",
+                "text": "additional_rules",
+                "rule": "additional_rules",
+                "shift": "additional_rules"
             }
             
             # Check for completion phrases
             for phrase, topic in completion_phrases.items():
                 if phrase in combined_text:
                     topic_areas_covered = st.session_state.get("topic_areas_covered", {})
-                    if topic in topic_areas_covered:
-                        st.session_state.topic_areas_covered[topic] = True
-                        print(f"Auto-updated topic {topic} to True based on answer pattern")
+                    if topic in topic_areas_covered and not topic_areas_covered[topic]:
+                        # Only auto-complete if there's substantial content
+                        if len(answer.split()) >= 5:
+                            st.session_state.topic_areas_covered[topic] = True
+                            print(f"Auto-updated topic {topic} to True based on answer pattern: {phrase}")
+                            break  # Only update one topic per answer
+                            
         except Exception as e:
             print(f"Error in _update_topic_coverage_from_answer: {e}")
+    
+    # NEW: Check if we should force progression
+    def should_force_progression(self):
+        """Check if we should force progression to avoid loops."""
+        current_idx = st.session_state.get("current_question_index", 0)
+        questions_count = len(st.session_state.get("questions", []))
+        
+        # If we're stuck on the same question for too long
+        loop_entries = len(st.session_state.conversation_loop_detector)
+        if loop_entries >= 6:  # Too many recent exchanges
+            return True
+            
+        # If we have good coverage but haven't progressed
+        answered_count = len(st.session_state.answered_questions)
+        if answered_count >= current_idx + 3:  # Answered more than current position suggests
+            return True
+            
+        return False
