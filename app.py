@@ -85,19 +85,31 @@ except Exception as e:
     """, unsafe_allow_html=True)
 
 def check_summary_readiness():
-    """Check if the questionnaire is ready for summary generation."""
-    readiness = services["topic_tracker"].check_summary_readiness()
+    """Check if the questionnaire is ready for summary generation using AI-driven assessment."""
+    # Use AI-driven readiness check if available, fallback to legacy system
+    if "question_tracker" in services:
+        readiness = services["question_tracker"].is_ready_for_summary()
+    else:
+        # Fallback to legacy topic tracker
+        readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
         warning_msg = readiness["message"]
+        missing_info = readiness.get("missing_info", [])
+        
+        if missing_info:
+            detailed_msg = f"Still need information about: {', '.join(missing_info[:3])}"
+        else:
+            detailed_msg = warning_msg
+        
         st.session_state.visible_messages.append({
             "role": "assistant", 
-            "content": f"I notice you'd like to see a summary, but let's make sure we have comprehensive coverage. {warning_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
+            "content": f"I notice you'd like to see a summary, but let's make sure we have comprehensive coverage. {detailed_msg}\n\nLet's continue with a few more questions to ensure we have complete information for your ARCOS implementation."
         })
         
         st.session_state.chat_history.append({
             "role": "system",
-            "content": f"User requested summary but questionnaire needs more coverage. {warning_msg} Continue asking questions systematically to cover missing areas."
+            "content": f"User requested summary but questionnaire needs more coverage. {detailed_msg} Continue asking questions systematically to cover missing areas."
         })
         
         return False
@@ -140,83 +152,96 @@ def add_debug_section():
                     st.write(f"{topic}: {'✅' if status else '❌'}")
 
 def process_user_input(processed_user_input):
-    """Enhanced user input processing with loop detection."""
+    """AI-driven user input processing with structured response handling."""
     
-    # Check for conversation loops FIRST
-    last_ai_response = ""
-    if st.session_state.visible_messages and st.session_state.visible_messages[-1]["role"] == "assistant":
-        last_ai_response = st.session_state.visible_messages[-1]["content"]
-    
-    is_loop = services["topic_tracker"].detect_conversation_loop(processed_user_input, last_ai_response)
-    
-    if is_loop:
-        # Break the loop by forcing next question
-        loop_break_response = services["topic_tracker"].break_loop_with_next_question()
-        st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
-        st.session_state.visible_messages.append({"role": "assistant", "content": loop_break_response})
-        st.session_state.chat_history.append({"role": "user", "content": processed_user_input})
-        st.session_state.chat_history.append({"role": "assistant", "content": loop_break_response})
-        return
-    
-    # Check for summary request
+    # Check for summary request first
     special_message = services["ai_service"].process_special_message_types(processed_user_input)
     if special_message["type"] == "summary_request":
         if handle_summary_request():
             st.rerun()
         return
     
-    # Mark question as answered if this is a substantial response
-    current_q_idx = st.session_state.get("current_question_index", 0)
-    services["topic_tracker"].mark_question_answered(current_q_idx, processed_user_input)
-    
     # Add user message to visible history
     st.session_state.visible_messages.append({"role": "user", "content": processed_user_input})
     
-    # Create enhanced prompt for the AI with loop prevention
-    guiding_suffix = (
-        "\n\n[SYSTEM_INSTRUCTION: Continue your systematic coverage of the ACE questionnaire. "
-        "If the user just requested an example, provide it briefly and then ask the NEXT question "
-        "from your checklist - do NOT repeat the same question. Focus on moving forward through "
-        "uncovered topics. Your response MUST follow the MANDATORY TURN STRUCTURE: "
-        "1. Brief acknowledgment of response "
-        "2. TOPIC_UPDATE JSON if appropriate "
-        "3. Ask the next logical question from your systematic checklist.]"
+    # Create system instruction for AI-driven tracking
+    tracking_instruction = (
+        "\n\n[SYSTEM_INSTRUCTION: You MUST include QUESTION_TRACKING and COMPLETION_STATUS blocks in your response. "
+        "If the user just provided an answer, mark answer_received: true and include their response text. "
+        "Update your progress assessment and ask the next logical question from your systematic questionnaire coverage. "
+        "Remember: Every response must include both structured tracking blocks.]"
     )
     
-    guided_user_input = processed_user_input + guiding_suffix
+    guided_user_input = processed_user_input + tracking_instruction
     st.session_state.chat_history.append({"role": "user", "content": guided_user_input})
     
-    # Get AI response
-    raw_ai_response = services["ai_service"].get_response(st.session_state.chat_history)
+    # Get structured AI response
+    ai_response_result = services["ai_service"].get_structured_response(st.session_state.chat_history)
     
-    # Handle SUMMARY_REQUEST
-    if "SUMMARY_REQUEST" in raw_ai_response:
+    if not ai_response_result["success"]:
+        # AI service failed - show error message
+        error_message = "AI service is currently unavailable. Please try again later."
+        st.session_state.visible_messages.append({"role": "assistant", "content": error_message})
+        st.error(f"AI Service Error: {ai_response_result['error']}")
+        return
+    
+    # Handle SUMMARY_REQUEST in raw response
+    raw_response = ai_response_result["raw_response"]
+    if "SUMMARY_REQUEST" in raw_response:
         if handle_summary_request():
-            conversation_part = raw_ai_response.split("SUMMARY_REQUEST")[0].strip()
+            conversation_part = raw_response.split("SUMMARY_REQUEST")[0].strip()
             if conversation_part:
-                st.session_state.chat_history.append({"role": "assistant", "content": conversation_part})
-                st.session_state.visible_messages.append({"role": "assistant", "content": conversation_part})
+                # Extract display content without structured blocks
+                display_content = services["ai_service"]._extract_display_content(conversation_part, {})
+                st.session_state.chat_history.append({"role": "assistant", "content": display_content})
+                st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
             st.rerun()
         return
     
-    # Process TOPIC_UPDATE
-    services["topic_tracker"].process_topic_update(raw_ai_response)
+    # Process structured AI response data
+    structured_data = ai_response_result["structured_data"]
+    if structured_data:
+        # Update question tracking using new system
+        if "question_tracker" not in services:
+            from modules.question_tracker import QuestionTracker
+            services["question_tracker"] = QuestionTracker()
+        
+        processing_result = services["question_tracker"].process_ai_response(structured_data)
+        
+        # Log processing results for debugging
+        if not processing_result["success"]:
+            print(f"Question tracking processing errors: {processing_result['errors']}")
+        if processing_result.get("warnings"):
+            print(f"Question tracking warnings: {processing_result['warnings']}")
     
-    # Clean response for display
-    topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}"
-    display_content = re.sub(topic_update_pattern, "", raw_ai_response, flags=re.DOTALL).strip()
-    display_content = "\n".join([line for line in display_content.splitlines() if line.strip()])
+    # Process legacy TOPIC_UPDATE for backward compatibility
+    if structured_data and structured_data.get("topic_update"):
+        services["topic_tracker"].process_topic_update(raw_response)
     
+    # Get display content (cleaned of structured blocks)
+    display_content = ai_response_result["display_content"]
+    
+    # Add to conversation history
     if display_content:
         st.session_state.chat_history.append({"role": "assistant", "content": display_content})
         st.session_state.visible_messages.append({"role": "assistant", "content": display_content})
     
-    # Force next question if none was asked (prevent getting stuck)
-    if not ("?" in display_content):
-        force_next_question()
-    
-    # User info extraction & Question advancement
+    # Extract user info if this is early in conversation
     extract_and_update_user_info(processed_user_input)
+    
+    # Validate response quality
+    if structured_data:
+        validation = services["ai_service"].validate_structured_response(structured_data)
+        if not validation["is_valid"]:
+            print(f"Response validation issues: {validation['missing_fields']}")
+        if validation.get("warnings"):
+            print(f"Response validation warnings: {validation['warnings']}")
+    
+    # Emergency fallback: if no question asked and not near completion, prompt AI
+    if display_content and "?" not in display_content:
+        progress_data = services["question_tracker"].get_progress_data() if "question_tracker" in services else {"ai_driven_progress": 0}
+        if progress_data.get("ai_driven_progress", 0) < 90:  # Only force if not near completion
+            print("Warning: AI didn't ask a question - may need fallback prompting")
 
 def force_next_question():
     """Force the AI to ask the next question if it forgot to."""
@@ -274,8 +299,11 @@ def display_enhanced_completion_ui():
     if not st.session_state.get("summary_requested", False):
         return
     
-    # Check readiness one more time
-    readiness = services["topic_tracker"].check_summary_readiness()
+    # Check readiness one more time using AI-driven assessment
+    if "question_tracker" in services:
+        readiness = services["question_tracker"].is_ready_for_summary()
+    else:
+        readiness = services["topic_tracker"].check_summary_readiness()
     
     if not readiness["ready"]:
         st.warning(f"Summary requested but questionnaire needs more coverage: {readiness['message']}")
@@ -284,9 +312,15 @@ def display_enhanced_completion_ui():
             st.rerun()
         return
     
-    # Generate summary
-    summary_text = services["summary_generator"].generate_conversation_summary()
-    responses_list = services["summary_generator"].get_responses_as_list()
+    # Generate summary using AI-driven Q&A pairs if available
+    if "question_tracker" in services:
+        responses_list = services["question_tracker"].get_qa_pairs_for_export()
+        # Still use summary generator for formatting, but with AI-driven data
+        summary_text = services["summary_generator"].generate_conversation_summary()
+    else:
+        # Fallback to legacy system
+        summary_text = services["summary_generator"].generate_conversation_summary()
+        responses_list = services["summary_generator"].get_responses_as_list()
     
     # Show completion message
     st.success("✅ Questionnaire completed successfully!")
@@ -344,22 +378,52 @@ def add_sidebar_ui():
             </div>
         """, unsafe_allow_html=True)
         
-        # KPI Dashboard
-        progress_data = services["topic_tracker"].get_progress_data()
-        st.markdown("### 📊 Progress Dashboard")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Completion", f"{progress_data['percentage']}%")
-        with col2:
-            st.metric("Topics", f"{progress_data['covered_count']}/{progress_data['total_count']}")
+        # KPI Dashboard - use AI-driven progress if available
+        if "question_tracker" in services:
+            progress_data = services["question_tracker"].get_progress_data()
+            st.markdown("### 📊 AI-Driven Progress Dashboard")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("AI Progress", f"{progress_data.get('ai_driven_progress', 0)}%")
+            with col2:
+                st.metric("Quality Score", f"{progress_data.get('quality_weighted_progress', 0)}%")
+            
+            col3, col4 = st.columns(2)
+            with col3:
+                st.metric("Questions Asked", progress_data.get('questions_asked', 0))
+            with col4:
+                st.metric("Questions Answered", progress_data.get('questions_answered', 0))
+                
+        else:
+            # Fallback to legacy progress tracking
+            progress_data = services["topic_tracker"].get_progress_data()
+            st.markdown("### 📊 Progress Dashboard")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Completion", f"{progress_data['percentage']}%")
+            with col2:
+                st.metric("Topics", f"{progress_data['covered_count']}/{progress_data['total_count']}")
+            
+            if 'questions_answered' in progress_data:
+                st.metric("Questions Answered", progress_data['questions_answered'])
         
-        if 'questions_answered' in progress_data:
-            st.metric("Questions Answered", progress_data['questions_answered'])
-        
-        # Show loop detection status if in debug mode
+        # Show debug information if in debug mode
         if st.secrets.get("DEBUG_MODE", False):
+            st.markdown("---")
+            st.markdown("### 🔧 Debug Information")
+            
+            if "question_tracker" in services:
+                debug_data = services["question_tracker"].debug_status()
+                st.write(f"**AI Questions:** {debug_data['total_questions']}")
+                st.write(f"**Current Question:** {debug_data['current_question']}")
+                st.write(f"**Missing Info:** {len(debug_data.get('completion_status', {}).get('missing_critical_info', []))}")
+                
+            # Legacy debug info
             loop_entries = len(st.session_state.get("conversation_loop_detector", []))
-            st.metric("Loop Entries", loop_entries)
+            st.write(f"**Loop Entries:** {loop_entries}")
+            
+            answered_count = len(st.session_state.get("answered_questions", set()))
+            st.write(f"**Legacy Answered:** {answered_count}")
 
         st.markdown("""
             <div style="text-align: center;">
@@ -477,16 +541,22 @@ def main():
             try:
                 services["session_manager"]._initialize_session_state() 
                 
-                # On first run, get the AI's welcome message
+                # Initialize question tracker
+                from modules.question_tracker import QuestionTracker
+                services["question_tracker"] = QuestionTracker()
+                
+                # On first run, get the AI's welcome message using structured response
                 initial_ai_input_messages = st.session_state.chat_history.copy() 
-                initial_ai_response = services["ai_service"].get_response(initial_ai_input_messages)
+                ai_response_result = services["ai_service"].get_structured_response(initial_ai_input_messages)
 
-                if initial_ai_response and not initial_ai_response.startswith("Error:") and not initial_ai_response.startswith("Bedrock client not initialized"):
-                    # Clean the initial response
-                    topic_update_pattern = r"TOPIC_UPDATE:\s*\{.*?\}"
-                    cleaned_initial_response = re.sub(topic_update_pattern, "", initial_ai_response, flags=re.DOTALL).strip()
-                    cleaned_initial_response = "\n".join([line for line in cleaned_initial_response.splitlines() if line.strip()])
-
+                if ai_response_result["success"]:
+                    # Process structured data from initial response
+                    if ai_response_result["structured_data"]:
+                        services["question_tracker"].process_ai_response(ai_response_result["structured_data"])
+                    
+                    # Get cleaned display content
+                    cleaned_initial_response = ai_response_result["display_content"]
+                    
                     if cleaned_initial_response:
                         st.session_state.chat_history.append({"role": "assistant", "content": cleaned_initial_response})
                         st.session_state.visible_messages.append({"role": "assistant", "content": cleaned_initial_response})
@@ -518,10 +588,13 @@ def main():
                 st.markdown(f"""<div style="display: flex; margin-bottom: 15px;"><div style="background-color: #f8f9fa; border-radius: 15px 15px 15px 0; padding: 12px 18px; max-width: 85%; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); border: 1px solid #e9ecef; border-left: 5px solid #6c757d;"><p style="margin: 0; color: #495057; font-weight: 600; font-size: 15px;">💬 Assistant</p><div style="margin-top: 8px;"><p style="margin: 0; white-space: pre-wrap; color: #333; line-height: 1.5;">{content}</p></div></div></div>""", unsafe_allow_html=True)
         
         # Show progress if beyond the very first AI message AND not in summary mode
-        current_q_idx = st.session_state.get("current_question_index", 0)
-        if (current_q_idx > 0 or (current_q_idx == 0 and len(st.session_state.get("visible_messages", [])) > 1)) and \
-           not st.session_state.get("summary_requested", False):
-            progress_data = services["topic_tracker"].get_progress_data()
+        messages_count = len(st.session_state.get("visible_messages", []))
+        if messages_count > 1 and not st.session_state.get("summary_requested", False):
+            # Use AI-driven progress if available, fallback to legacy
+            if "question_tracker" in services:
+                progress_data = services["question_tracker"].get_progress_data()
+            else:
+                progress_data = services["topic_tracker"].get_progress_data()
             services["chat_ui"].display_progress_bar(progress_data)
         
         # Handle summary mode or active chat

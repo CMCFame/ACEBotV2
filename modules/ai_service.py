@@ -3,6 +3,7 @@ import boto3
 import streamlit as st
 import json
 import os
+import re
 from config import BEDROCK_MODEL_ID, BEDROCK_AWS_REGION, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 class AIService:
@@ -190,3 +191,233 @@ For instance, if the question was about who to contact first, a good direct exam
         ]
         example_response_text = self.get_response(messages_for_example, max_tokens=150, temperature=0.7)
         return example_response_text.strip() if example_response_text else "Could not generate an example at this time."
+
+    def get_structured_response(self, messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPERATURE):
+        """
+        Get a structured response from AI that includes conversation content and question tracking.
+        Returns both the parsed structure and the raw response.
+        """
+        if not self.client:
+            return {
+                "success": False,
+                "error": "Bedrock client not initialized. Please check AWS credentials configuration.",
+                "raw_response": None,
+                "structured_data": None,
+                "display_content": "AI service is currently unavailable. Please try again later."
+            }
+
+        try:
+            # Get the raw response
+            raw_response = self.get_response(messages, max_tokens, temperature)
+            
+            if raw_response.startswith("Error:") or raw_response.startswith("Bedrock client not initialized"):
+                return {
+                    "success": False,
+                    "error": raw_response,
+                    "raw_response": raw_response,
+                    "structured_data": None,
+                    "display_content": "AI service is currently unavailable. Please try again later."
+                }
+            
+            # Parse structured response
+            structured_data = self._parse_structured_response(raw_response)
+            
+            # Extract display content (fallback to raw if parsing fails)
+            display_content = self._extract_display_content(raw_response, structured_data)
+            
+            return {
+                "success": True,
+                "error": None,
+                "raw_response": raw_response,
+                "structured_data": structured_data,
+                "display_content": display_content
+            }
+            
+        except Exception as e:
+            st.error(f"Error getting structured response: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Error getting structured response: {str(e)}",
+                "raw_response": None,
+                "structured_data": None,
+                "display_content": "AI service encountered an error. Please try again later."
+            }
+
+    def _parse_structured_response(self, raw_response):
+        """
+        Parse structured AI response to extract question tracking and completion data.
+        Expected format includes JSON blocks for QUESTION_TRACKING and COMPLETION_STATUS.
+        """
+        structured_data = {
+            "question_tracking": None,
+            "completion_status": None,
+            "topic_update": None  # Keep compatibility with existing system
+        }
+        
+        try:
+            # Extract QUESTION_TRACKING JSON with proper nested object handling
+            question_tracking_match = re.search(r'QUESTION_TRACKING:\s*(\{)', raw_response, re.DOTALL)
+            if question_tracking_match:
+                start_pos = question_tracking_match.start(1)
+                question_json = self._extract_json_object(raw_response, start_pos)
+                if question_json:
+                    structured_data["question_tracking"] = json.loads(question_json)
+            
+            # Extract COMPLETION_STATUS JSON with proper nested object handling
+            completion_match = re.search(r'COMPLETION_STATUS:\s*(\{)', raw_response, re.DOTALL)
+            if completion_match:
+                start_pos = completion_match.start(1)
+                completion_json = self._extract_json_object(raw_response, start_pos)
+                if completion_json:
+                    structured_data["completion_status"] = json.loads(completion_json)
+            
+            # Keep compatibility with existing TOPIC_UPDATE system
+            topic_update_match = re.search(r'TOPIC_UPDATE:\s*(\{)', raw_response, re.DOTALL)
+            if topic_update_match:
+                start_pos = topic_update_match.start(1)
+                topic_json = self._extract_json_object(raw_response, start_pos)
+                if topic_json:
+                    structured_data["topic_update"] = json.loads(topic_json)
+                
+        except json.JSONDecodeError as e:
+            print(f"Warning: Failed to parse structured response JSON: {e}")
+            # Return partial data - don't fail completely
+            
+        except Exception as e:
+            print(f"Warning: Error parsing structured response: {e}")
+            
+        return structured_data
+
+    def _extract_json_object(self, text, start_pos):
+        """
+        Extract a complete JSON object starting from the given position.
+        Handles nested braces correctly.
+        """
+        if start_pos >= len(text) or text[start_pos] != '{':
+            return None
+        
+        brace_count = 0
+        in_string = False
+        escape_next = False
+        
+        for i in range(start_pos, len(text)):
+            char = text[i]
+            
+            if escape_next:
+                escape_next = False
+                continue
+                
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+                
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+                
+            if not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        return text[start_pos:i+1]
+        
+        return None
+
+    def _extract_display_content(self, raw_response, structured_data):
+        """
+        Extract the main conversation content for display, removing structured data blocks.
+        """
+        try:
+            # Start with the full response
+            display_content = raw_response
+            
+            # Remove QUESTION_TRACKING blocks using robust JSON extraction
+            question_tracking_match = re.search(r'QUESTION_TRACKING:\s*\{', display_content, re.DOTALL)
+            if question_tracking_match:
+                start_pos = question_tracking_match.start()
+                json_start = question_tracking_match.start() + len(question_tracking_match.group()) - 1
+                json_obj = self._extract_json_object(display_content, json_start)
+                if json_obj:
+                    # Remove the entire block including the label
+                    block_end = json_start + len(json_obj)
+                    display_content = display_content[:start_pos] + display_content[block_end:]
+            
+            # Remove COMPLETION_STATUS blocks
+            completion_match = re.search(r'COMPLETION_STATUS:\s*\{', display_content, re.DOTALL)
+            if completion_match:
+                start_pos = completion_match.start()
+                json_start = completion_match.start() + len(completion_match.group()) - 1
+                json_obj = self._extract_json_object(display_content, json_start)
+                if json_obj:
+                    block_end = json_start + len(json_obj)
+                    display_content = display_content[:start_pos] + display_content[block_end:]
+            
+            # Remove TOPIC_UPDATE blocks (existing compatibility)
+            topic_update_match = re.search(r'TOPIC_UPDATE:\s*\{', display_content, re.DOTALL)
+            if topic_update_match:
+                start_pos = topic_update_match.start()
+                json_start = topic_update_match.start() + len(topic_update_match.group()) - 1
+                json_obj = self._extract_json_object(display_content, json_start)
+                if json_obj:
+                    block_end = json_start + len(json_obj)
+                    display_content = display_content[:start_pos] + display_content[block_end:]
+            
+            # Clean up extra whitespace and empty lines
+            display_content = re.sub(r'\n\s*\n', '\n\n', display_content)
+            display_content = display_content.strip()
+            
+            # If nothing left after cleaning, use a fallback
+            if not display_content:
+                display_content = "I'm processing your response. Let me ask the next question."
+                
+            return display_content
+            
+        except Exception as e:
+            print(f"Warning: Error extracting display content: {e}")
+            # Fallback to raw response
+            return raw_response
+
+    def validate_structured_response(self, structured_data):
+        """
+        Validate that the structured response contains required fields.
+        Returns validation result and any missing fields.
+        """
+        validation_result = {
+            "is_valid": True,
+            "missing_fields": [],
+            "warnings": []
+        }
+        
+        try:
+            # Check question_tracking structure
+            if structured_data.get("question_tracking"):
+                qt = structured_data["question_tracking"]
+                required_qt_fields = ["question_asked", "question_id", "topic", "answer_received"]
+                
+                for field in required_qt_fields:
+                    if field not in qt:
+                        validation_result["missing_fields"].append(f"question_tracking.{field}")
+                        validation_result["is_valid"] = False
+            
+            # Check completion_status structure  
+            if structured_data.get("completion_status"):
+                cs = structured_data["completion_status"]
+                required_cs_fields = ["overall_progress"]
+                
+                for field in required_cs_fields:
+                    if field not in cs:
+                        validation_result["missing_fields"].append(f"completion_status.{field}")
+                        validation_result["is_valid"] = False
+                        
+                # Validate progress is a reasonable number
+                progress = cs.get("overall_progress", 0)
+                if not isinstance(progress, (int, float)) or progress < 0 or progress > 100:
+                    validation_result["warnings"].append("overall_progress should be a number between 0-100")
+            
+        except Exception as e:
+            validation_result["is_valid"] = False
+            validation_result["missing_fields"].append(f"validation_error: {str(e)}")
+            
+        return validation_result

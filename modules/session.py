@@ -48,7 +48,7 @@ class SessionManager:
             if not hasattr(st.session_state, 'initialized_by_app'):
                  self._initialize_session_state()
 
-        return {
+        session_data = {
             "user_info": st.session_state.user_info,
             "responses": st.session_state.responses,
             "current_question_index": st.session_state.current_question_index,
@@ -56,8 +56,19 @@ class SessionManager:
             "visible_messages": st.session_state.visible_messages,
             "topic_areas_covered": st.session_state.topic_areas_covered,
             "saved_timestamp": datetime.now().isoformat(),
-            "version": "3.0"
+            "version": "4.0"  # Updated for AI-driven tracking
         }
+        
+        # Include AI-driven tracking data if available
+        if hasattr(st.session_state, 'ai_questions'):
+            session_data.update({
+                "ai_questions": st.session_state.ai_questions,
+                "ai_question_sequence": st.session_state.ai_question_sequence,
+                "ai_completion_status": st.session_state.ai_completion_status,
+                "ai_current_question": st.session_state.ai_current_question
+            })
+        
+        return session_data
     
     def _initialize_session_state(self):
         """Initialize the session state with default values. The AI will generate the first message."""
@@ -224,6 +235,19 @@ class SessionManager:
             
             st.session_state.summary_requested = session_data.get("summary_requested", False)
             st.session_state.explicitly_finished = session_data.get("explicitly_finished", False)
+            
+            # Restore AI-driven tracking data if available
+            if "ai_questions" in session_data:
+                st.session_state.ai_questions = session_data.get("ai_questions", {})
+                st.session_state.ai_question_sequence = session_data.get("ai_question_sequence", [])
+                st.session_state.ai_completion_status = session_data.get("ai_completion_status", {
+                    "overall_progress": 0,
+                    "topic_coverage": {topic: False for topic in TOPIC_AREAS.keys()},
+                    "missing_critical_info": [],
+                    "last_updated": datetime.now().isoformat()
+                })
+                st.session_state.ai_current_question = session_data.get("ai_current_question", None)
+                print(f"Restored AI tracking data: {len(st.session_state.ai_questions)} questions, {st.session_state.ai_completion_status.get('overall_progress', 0)}% progress")
             
             st.session_state.restoring_session = False 
             
