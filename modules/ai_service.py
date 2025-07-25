@@ -225,12 +225,9 @@ For instance, if the question was about who to contact first, a good direct exam
             # Extract display content (fallback to raw if parsing fails)
             display_content = self._extract_display_content(raw_response, structured_data)
             
-            # Debug logging to help identify display issues
+            # Debug logging to help identify display issues (only in development)
             if "QUESTION_TRACKING" in display_content or "COMPLETION_STATUS" in display_content:
-                print(f"WARNING: Display content still contains structured blocks!")
-                print(f"Raw response length: {len(raw_response)}")
-                print(f"Display content length: {len(display_content)}")
-                print(f"Display content preview: {display_content[:200]}...")
+                print(f"WARNING: Display content still contains structured blocks after extraction!")
             
             return {
                 "success": True,
@@ -339,40 +336,22 @@ For instance, if the question was about who to contact first, a good direct exam
         try:
             # Start with the full response
             display_content = raw_response
+            # More aggressive approach - remove ALL structured blocks with regex
+            # Remove QUESTION_TRACKING blocks (including multiline JSON)
+            display_content = re.sub(r'QUESTION_TRACKING:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', '', display_content, flags=re.DOTALL)
             
-            # Remove QUESTION_TRACKING blocks using robust JSON extraction
-            question_tracking_match = re.search(r'QUESTION_TRACKING:\s*\{', display_content, re.DOTALL)
-            if question_tracking_match:
-                start_pos = question_tracking_match.start()
-                json_start = question_tracking_match.start() + len(question_tracking_match.group()) - 1
-                json_obj = self._extract_json_object(display_content, json_start)
-                if json_obj:
-                    # Remove the entire block including the label
-                    block_end = json_start + len(json_obj)
-                    display_content = display_content[:start_pos] + display_content[block_end:]
+            # Remove COMPLETION_STATUS blocks (including multiline JSON)  
+            display_content = re.sub(r'COMPLETION_STATUS:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', '', display_content, flags=re.DOTALL)
             
-            # Remove COMPLETION_STATUS blocks
-            completion_match = re.search(r'COMPLETION_STATUS:\s*\{', display_content, re.DOTALL)
-            if completion_match:
-                start_pos = completion_match.start()
-                json_start = completion_match.start() + len(completion_match.group()) - 1
-                json_obj = self._extract_json_object(display_content, json_start)
-                if json_obj:
-                    block_end = json_start + len(json_obj)
-                    display_content = display_content[:start_pos] + display_content[block_end:]
+            # Remove TOPIC_UPDATE blocks (legacy compatibility)
+            display_content = re.sub(r'TOPIC_UPDATE:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', '', display_content, flags=re.DOTALL)
             
-            # Remove TOPIC_UPDATE blocks (existing compatibility)
-            topic_update_match = re.search(r'TOPIC_UPDATE:\s*\{', display_content, re.DOTALL)
-            if topic_update_match:
-                start_pos = topic_update_match.start()
-                json_start = topic_update_match.start() + len(topic_update_match.group()) - 1
-                json_obj = self._extract_json_object(display_content, json_start)
-                if json_obj:
-                    block_end = json_start + len(json_obj)
-                    display_content = display_content[:start_pos] + display_content[block_end:]
+            # Additional cleanup - remove any remaining JSON-like blocks that start with known prefixes
+            display_content = re.sub(r'(QUESTION_TRACKING|COMPLETION_STATUS|TOPIC_UPDATE):\s*.*?(?=\n\n|\Z)', '', display_content, flags=re.DOTALL)
             
             # Clean up extra whitespace and empty lines
-            display_content = re.sub(r'\n\s*\n', '\n\n', display_content)
+            display_content = re.sub(r'\n\s*\n\s*\n', '\n\n', display_content)  # Multiple empty lines to double
+            display_content = re.sub(r'^\s*\n', '', display_content)  # Leading empty lines
             display_content = display_content.strip()
             
             # If nothing left after cleaning, use a fallback
@@ -383,8 +362,29 @@ For instance, if the question was about who to contact first, a good direct exam
             
         except Exception as e:
             print(f"Warning: Error extracting display content: {e}")
-            # Fallback to raw response
-            return raw_response
+            # Fallback - try simple removal as last resort
+            try:
+                fallback_content = raw_response
+                # Simple line-by-line removal
+                lines = fallback_content.split('\n')
+                clean_lines = []
+                skip_mode = False
+                
+                for line in lines:
+                    if any(prefix in line for prefix in ['QUESTION_TRACKING:', 'COMPLETION_STATUS:', 'TOPIC_UPDATE:']):
+                        skip_mode = True
+                        continue
+                    if skip_mode and (line.strip().endswith('}') or not line.strip()):
+                        if line.strip().endswith('}'):
+                            skip_mode = False
+                        continue
+                    if not skip_mode:
+                        clean_lines.append(line)
+                
+                return '\n'.join(clean_lines).strip()
+            except:
+                # Ultimate fallback
+                return "I'm processing your response. Let me ask the next question."
 
     def validate_structured_response(self, structured_data):
         """
