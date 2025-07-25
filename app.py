@@ -380,19 +380,23 @@ def add_sidebar_ui():
         
         # KPI Dashboard - use AI-driven progress if available
         if "question_tracker" in services:
-            progress_data = services["question_tracker"].get_progress_data()
-            st.markdown("### 📊 AI-Driven Progress Dashboard")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("AI Progress", f"{progress_data.get('ai_driven_progress', 0)}%")
-            with col2:
-                st.metric("Quality Score", f"{progress_data.get('quality_weighted_progress', 0)}%")
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                st.metric("Questions Asked", progress_data.get('questions_asked', 0))
-            with col4:
-                st.metric("Questions Answered", progress_data.get('questions_answered', 0))
+            try:
+                progress_data = services["question_tracker"].get_progress_data()
+                st.markdown("### 📊 AI-Driven Progress Dashboard")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("AI Progress", f"{progress_data.get('ai_driven_progress', 0)}%")
+                with col2:
+                    st.metric("Quality Score", f"{progress_data.get('quality_weighted_progress', 0)}%")
+                
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.metric("Questions Asked", progress_data.get('questions_asked', 0))
+                with col4:
+                    st.metric("Questions Answered", progress_data.get('questions_answered', 0))
+                    
+            except (KeyError, AttributeError) as e:
+                st.warning("Progress tracking initializing...")
                 
         else:
             # Fallback to legacy progress tracking
@@ -753,4 +757,21 @@ if __name__ == "__main__":
     if 'instructions' not in st.session_state:
         try: st.session_state.instructions = load_instructions('data/prompts/system_prompt.txt')
         except: st.session_state.instructions = ""
+    
+    # Initialize AI question tracking session state
+    if 'ai_questions' not in st.session_state:
+        st.session_state.ai_questions = {}
+    if 'ai_question_sequence' not in st.session_state:
+        st.session_state.ai_question_sequence = []
+    if 'ai_completion_status' not in st.session_state:
+        from config import TOPIC_AREAS
+        st.session_state.ai_completion_status = {
+            "overall_progress": 0,
+            "topic_coverage": {topic: False for topic in TOPIC_AREAS.keys()},
+            "missing_critical_info": [],
+            "last_updated": ""
+        }
+    if 'ai_current_question' not in st.session_state:
+        st.session_state.ai_current_question = None
+    
     main()
