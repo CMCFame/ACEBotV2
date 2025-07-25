@@ -225,6 +225,13 @@ For instance, if the question was about who to contact first, a good direct exam
             # Extract display content (fallback to raw if parsing fails)
             display_content = self._extract_display_content(raw_response, structured_data)
             
+            # Debug logging to help identify display issues
+            if "QUESTION_TRACKING" in display_content or "COMPLETION_STATUS" in display_content:
+                print(f"WARNING: Display content still contains structured blocks!")
+                print(f"Raw response length: {len(raw_response)}")
+                print(f"Display content length: {len(display_content)}")
+                print(f"Display content preview: {display_content[:200]}...")
+            
             return {
                 "success": True,
                 "error": None,
