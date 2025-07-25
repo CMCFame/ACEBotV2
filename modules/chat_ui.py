@@ -211,10 +211,18 @@ class ChatUI:
         return user_input if submit_button else None
     
     def display_progress_bar(self, progress_data):
-        """Display a progress bar showing topic coverage."""
-        progress_pct = progress_data["percentage"]
-        covered_count = progress_data["covered_count"]
-        total_count = progress_data["total_count"]
+        """Display a progress bar showing topic coverage - supports both AI-driven and legacy formats."""
+        # Handle both AI-driven and legacy progress data formats
+        if "ai_driven_progress" in progress_data:
+            # AI-driven format
+            progress_pct = progress_data["ai_driven_progress"]
+            covered_count = progress_data.get("questions_answered", 0)
+            total_count = progress_data.get("questions_asked", 1)
+        else:
+            # Legacy format
+            progress_pct = progress_data["percentage"]
+            covered_count = progress_data["covered_count"]
+            total_count = progress_data["total_count"]
         
         st.markdown(
             f"""
@@ -226,7 +234,7 @@ class ChatUI:
                     <div style="margin-left: 10px; font-weight: bold;">{progress_pct}%</div>
                 </div>
                 <p style="text-align: center; margin: 0; color: #555;">
-                    {covered_count} of {total_count} topic areas covered
+                    {"Questions answered: " + str(covered_count) + "/" + str(total_count) if "ai_driven_progress" in progress_data else str(covered_count) + " of " + str(total_count) + " topic areas covered"}
                 </p>
             </div>
             """,
