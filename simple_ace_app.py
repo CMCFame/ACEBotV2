@@ -209,11 +209,12 @@ HELP TRIGGERS - If they say any of these, provide an example and gentle guidance
 Remember: You're helping them document their current processes clearly so ARCOS can be configured properly. Focus on understanding HOW they currently handle callouts with enough detail for technical implementation.
 
 RESPONSE INSTRUCTIONS:
-- If this is the user's first response to the current question: Give brief acknowledgment (or none), then ask ONLY the exact question shown above
+- If the user's answer is complete/acceptable: Give brief acknowledgment (or none), then ask the NEXT question in bold
+- If their answer is too vague/short: Ask for clarification about the CURRENT question - do NOT advance to next question  
 - If they're asking for help/examples: provide guidance but do NOT ask the next question yet - wait for their actual answer
 - NEVER ask multiple questions in one response
 - NEVER add "anything else?", "any other details?", or similar phrases
-- ONE QUESTION ONLY per response - the exact one shown above
+- Use **bold** formatting around question text for visibility
 
 RESPONSE VARIATIONS - Use different acknowledgments:
 - "Got it!" / "Perfect!" / "Thanks!" / "Understood."
@@ -221,9 +222,11 @@ RESPONSE VARIATIONS - Use different acknowledgments:
 - Just move directly to the next question without acknowledgment
 
 EXAMPLE FORMATS (vary these):
-"Got it! [EXACT QUESTION TEXT FROM ABOVE]"
-"Perfect. [EXACT QUESTION TEXT FROM ABOVE]" 
-"[EXACT QUESTION TEXT FROM ABOVE]"
+"Got it! **[EXACT QUESTION TEXT FROM ABOVE]**"
+"Perfect. **[EXACT QUESTION TEXT FROM ABOVE]**" 
+"**[EXACT QUESTION TEXT FROM ABOVE]**"
+
+IMPORTANT: Always wrap the question text in **bold** markdown for better visibility.
 
 🚨 IMPORTANT: If the current question ID is 2 or higher, the user has already provided their name in a previous question. Do not ask for their name again."""
         
@@ -628,41 +631,33 @@ First, could you please provide your name and company name?"""
                         # System is working - proceed normally
                         # Check if this is a help request
                         if is_help_request(user_input, current_q["id"]):
-                            # Just add the AI response for help
+                            # Just add the AI response for help - don't advance question
                             st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                         else:
-                            # Store the answer 
-                            st.session_state.answers[current_q["id"]] = user_input
-                            
-                            # Move to next question BEFORE generating AI response
+                            # Check if AI is asking for clarification or accepting the answer
+                            # If AI response contains the NEXT question, it means answer was accepted
+                            next_question_text = ""
                             if st.session_state.current_question < len(ACE_QUESTIONS):
+                                next_question_text = ACE_QUESTIONS[st.session_state.current_question]['text']
+                            
+                            # If AI response contains the next question text, answer was accepted
+                            if next_question_text and next_question_text in ai_response:
+                                # Answer accepted - store it and advance
+                                st.session_state.answers[current_q["id"]] = user_input
                                 st.session_state.current_question += 1
-                                # Get the NEXT question for AI to ask
-                                next_question = get_current_question()
-                                if next_question:
-                                    # Generate AI response with the NEXT question
-                                    ai_response_next = ai_service.get_response(st.session_state.conversation, next_question)
-                                    st.session_state.conversation.append({"role": "assistant", "content": ai_response_next})
-                                else:
-                                    # Questionnaire completed!
-                                    completion_msg = f"""Perfect! That completes our questionnaire. You've provided comprehensive information about your callout processes. 
-
-🎉 **All {len(ACE_QUESTIONS)} questions completed!**
-
-Your responses will be very helpful for configuring ARCOS to work exactly how your utility operates. Thank you for your time and detailed answers!"""
-                                    
-                                    st.session_state.conversation.append({"role": "assistant", "content": completion_msg})
+                                st.session_state.conversation.append({"role": "assistant", "content": ai_response})
+                            elif st.session_state.current_question >= len(ACE_QUESTIONS):
+                                # Last question - check if it's a completion message
+                                if "completes our questionnaire" in ai_response.lower() or "all" in ai_response.lower() and "questions completed" in ai_response.lower():
+                                    st.session_state.answers[current_q["id"]] = user_input
                                     st.session_state.completed = True
+                                    st.session_state.conversation.append({"role": "assistant", "content": ai_response})
+                                else:
+                                    # Still asking for clarification on last question
+                                    st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                             else:
-                                # Questionnaire completed!
-                                completion_msg = f"""Perfect! That completes our questionnaire. You've provided comprehensive information about your callout processes. 
-
-🎉 **All {len(ACE_QUESTIONS)} questions completed!**
-
-Your responses will be very helpful for configuring ARCOS to work exactly how your utility operates. Thank you for your time and detailed answers!"""
-                                
-                                st.session_state.conversation.append({"role": "assistant", "content": completion_msg})
-                                st.session_state.completed = True
+                                # AI is asking for clarification - don't advance question
+                                st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                     
                     st.rerun()
 
