@@ -167,6 +167,8 @@ Progress: Question {current_question_info['id']} of {len(ACE_QUESTIONS)}
 
 CURRENT QUESTION TO ASK: "{current_question_info['text']}"
 
+🔤 FORMATTING: When you ask this question, wrap it in **double asterisks** like this: **{current_question_info['text']}**
+
 🚫 STRICT RULES:
 - Ask ONLY the exact question shown above - nothing else
 - NO additional questions, follow-ups, or clarifications in the same response
@@ -222,11 +224,11 @@ RESPONSE VARIATIONS - Use different acknowledgments:
 - Just move directly to the next question without acknowledgment
 
 EXAMPLE FORMATS (vary these):
-"Got it! **[EXACT QUESTION TEXT FROM ABOVE]**"
-"Perfect. **[EXACT QUESTION TEXT FROM ABOVE]**" 
-"**[EXACT QUESTION TEXT FROM ABOVE]**"
+"Got it! **{current_question_info['text']}**"
+"Perfect. **{current_question_info['text']}**" 
+"**{current_question_info['text']}**"
 
-IMPORTANT: Always wrap the question text in **bold** markdown for better visibility.
+🚨 CRITICAL: The question MUST be wrapped in **double asterisks** for bold formatting.
 
 🚨 IMPORTANT: If the current question ID is 2 or higher, the user has already provided their name in a previous question. Do not ask for their name again."""
         
@@ -634,30 +636,35 @@ First, could you please provide your name and company name?"""
                             # Just add the AI response for help - don't advance question
                             st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                         else:
-                            # Check if AI is asking for clarification or accepting the answer
-                            # If AI response contains the NEXT question, it means answer was accepted
+                            # Add AI response to conversation first
+                            st.session_state.conversation.append({"role": "assistant", "content": ai_response})
+                            
+                            # Check if this is a clarification request (AI asking for more info about current question)
+                            clarification_indicators = [
+                                "could you elaborate", "can you provide more", "could you be more specific",
+                                "can you tell me more", "could you explain", "what do you mean by",
+                                "can you clarify", "could you give me more details", "help us understand",
+                                "for example, are they", "such as", "like what", "why", "how", "what kind"
+                            ]
+                            
+                            is_clarification = any(indicator in ai_response.lower() for indicator in clarification_indicators)
+                            
+                            # Check if AI response contains the NEXT question (means answer was accepted)
                             next_question_text = ""
                             if st.session_state.current_question < len(ACE_QUESTIONS):
                                 next_question_text = ACE_QUESTIONS[st.session_state.current_question]['text']
                             
-                            # If AI response contains the next question text, answer was accepted
-                            if next_question_text and next_question_text in ai_response:
+                            # Only advance if answer was accepted (AI asked next question) and not asking for clarification
+                            if next_question_text and next_question_text in ai_response and not is_clarification:
                                 # Answer accepted - store it and advance
                                 st.session_state.answers[current_q["id"]] = user_input
                                 st.session_state.current_question += 1
-                                st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                             elif st.session_state.current_question >= len(ACE_QUESTIONS):
                                 # Last question - check if it's a completion message
-                                if "completes our questionnaire" in ai_response.lower() or "all" in ai_response.lower() and "questions completed" in ai_response.lower():
+                                if "completes our questionnaire" in ai_response.lower() or ("all" in ai_response.lower() and "questions completed" in ai_response.lower()):
                                     st.session_state.answers[current_q["id"]] = user_input
                                     st.session_state.completed = True
-                                    st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                                else:
-                                    # Still asking for clarification on last question
-                                    st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                            else:
-                                # AI is asking for clarification - don't advance question
-                                st.session_state.conversation.append({"role": "assistant", "content": ai_response})
+                            # If it's clarification or no next question found, don't advance (stay on current question)
                     
                     st.rerun()
 
