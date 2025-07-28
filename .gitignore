@@ -8,3 +8,27 @@ modules/__pycache__/session.cpython-313.pyc
 CLAUDE.md
 examples/example_new.csv
 examples/old_ace.txt
+
+# AWS credentials and secrets
+.streamlit/secrets.toml
+.env
+*.key
+*.pem
+previousver/app.py
+previousver/assets/style.css
+previousver/config.py
+previousver/data/prompts/__init__.py
+previousver/data/prompts/system_prompt.txt
+previousver/data/questions.txt
+previousver/modules/__init__.py
+previousver/modules/ai_service.py
+previousver/modules/chat_ui.py
+previousver/modules/email_service.py
+previousver/modules/export.py
+previousver/modules/server_storage.py
+previousver/modules/session.py
+previousver/modules/summary.py
+previousver/modules/topic_tracker.py
+previousver/requirements.txt
+previousver/utils/__init__.py
+previousver/utils/helpers.py
