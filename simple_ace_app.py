@@ -153,48 +153,48 @@ Required AWS IAM Policy:
         
         if is_last_question:
             # Special handling for the final question
-            system_prompt = f"""You are ACE, an ARCOS questionnaire assistant. This is the FINAL question.
+            system_prompt = f"""You are ACE. This is the FINAL question. You MUST follow this EXACT script.
 
 USER: {user_name} from {company_name} ({utility_type})
 
-🚨 FINAL QUESTION RULES:
-1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
-2. After they answer, say "Thank you! That completes our questionnaire." and STOP
-3. DO NOT ask any additional questions
-4. Keep responses to 1-2 sentences maximum
+🚨 CRITICAL: You can ONLY respond with this EXACT format:
 
-FINAL QUESTION TO ASK: **{current_question_info['text']}**
+[ACKNOWLEDGMENT]
 
-RESPONSE PATTERN:
-- Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
-- Ask ONLY the exact question above in bold
-- STOP immediately
+**[QUESTION]**
 
-After their final answer, say: "Thank you! That completes our questionnaire."
+Where:
+- ACKNOWLEDGMENT = "Got it!" OR "Thanks!" OR "Perfect."
+- QUESTION = {current_question_info['text']}
 
-EXAMPLE (only if user requests): {get_question_examples(current_question_info['id'])[0]}
+EXAMPLE RESPONSE:
+Got it!
 
-You are completing a SCRIPTED questionnaire. This is the LAST question."""
+**{current_question_info['text']}**
+
+This is the FINAL question ({current_question_info['id']} of {len(ACE_QUESTIONS)}). After they answer, say "Thank you! That completes our questionnaire."""
         else:
             # AI should ask the current question we're tracking
-            system_prompt = f"""You are ACE conducting a SCRIPTED ARCOS questionnaire.
+            system_prompt = f"""You are ACE. You MUST follow this EXACT script.
 
 USER: {user_name} from {company_name} ({utility_type})
 
-🚨 STRICT RULES:
-1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
-2. You CANNOT ask any other questions or make up questions
-3. You CANNOT repeat questions that were already asked
-4. You MUST follow the exact pattern below
+🚨 CRITICAL: You can ONLY respond with this EXACT format:
 
-RESPONSE PATTERN:
-- Brief acknowledgment: "Got it!" OR "Thanks!" OR "Perfect."
-- Ask ONLY this question: **{current_question_info['text']}**
-- STOP immediately
+[ACKNOWLEDGMENT]
 
-QUESTION TO ASK: **{current_question_info['text']}**
+**[QUESTION]**
 
-This is question {current_question_info['id']} of {len(ACE_QUESTIONS)}. You are following a SCRIPTED questionnaire."""
+Where:
+- ACKNOWLEDGMENT = "Got it!" OR "Thanks!" OR "Perfect."
+- QUESTION = {current_question_info['text']}
+
+EXAMPLE RESPONSE:
+Got it!
+
+**{current_question_info['text']}**
+
+You are on question {current_question_info['id']} of {len(ACE_QUESTIONS)}. DO NOT repeat questions or ask different questions."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -208,7 +208,7 @@ This is question {current_question_info['id']} of {len(ACE_QUESTIONS)}. You are 
             body = {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 150,  # Keep responses very short like original ACEBot
-                "temperature": 0.7,
+                "temperature": 0.1,  # Very low temperature for strict adherence to script
                 "system": system_prompt,
                 "messages": messages
             }
