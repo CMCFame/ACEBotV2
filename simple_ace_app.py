@@ -8,62 +8,50 @@ import streamlit as st
 import boto3
 import json
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from datetime import datetime
 
 # Configuration
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 BEDROCK_AWS_REGION = "us-east-1"
 
-# Complete ACE Questions - Based on the original questionnaire
+# Complete ACE Questions - Reframed for conciseness and clarity
 ACE_QUESTIONS = [
-    # Basic Information
-    {"id": 1, "text": "Could you please provide your name and company name?", "topic": "Basic Info", "tier": 1},
-    {"id": 2, "text": "What type of situation are you responding to for this callout?", "topic": "Basic Info", "tier": 1},
-    {"id": 3, "text": "How many employees are typically required for the callout?", "topic": "Staffing", "tier": 1},
+    # Section 1: Basic Callout Information
+    {"id": 1, "text": "Describe the type of situation or event that triggers this callout process.", "topic": "Basic Information", "tier": 1},
+    {"id": 2, "text": "How many employees, and with which roles or job classifications, are typically required for this type of event?", "topic": "Basic Information", "tier": 1},
     
-    # Contact Process
-    {"id": 4, "text": "Who do you call first and why?", "topic": "Contact Process", "tier": 1},
-    {"id": 5, "text": "How many devices do they have?", "topic": "Contact Process", "tier": 1},
-    {"id": 6, "text": "Which device do you call first and why?", "topic": "Contact Process", "tier": 1},
-    {"id": 7, "text": "What types of devices are you calling?", "topic": "Contact Process", "tier": 1},
+    # Section 2: Initial Contact Process
+    {"id": 3, "text": "Who is contacted first, and what is the main reason for that person or role being the first?", "topic": "Contact Process", "tier": 1},
+    {"id": 4, "text": "Thinking of the first person to be contacted, how many devices are used to try and reach them (e.g., work phone, personal cell)?", "topic": "Contact Process", "tier": 1},
+    {"id": 5, "text": "Are those devices contacted one by one in a specific order, or all at the same time? If in order, what is it and why is it done that way?", "topic": "Contact Process", "tier": 1},
+    {"id": 6, "text": "What types of devices are primarily used? (e.g., cell phones, landlines, radios, etc.)", "topic": "Contact Process", "tier": 1},
     
-    # List Management
-    {"id": 8, "text": "Is the next employee you call on the same list or a different list?", "topic": "List Management", "tier": 1},
-    {"id": 9, "text": "How many lists (groups) total do you use for this callout?", "topic": "List Management", "tier": 1},
-    {"id": 10, "text": "Are these lists based on job classification or some other attribute?", "topic": "List Management", "tier": 1},
-    {"id": 11, "text": "How do you call this list - straight down or do you skip around?", "topic": "List Management", "tier": 1},
-    {"id": 12, "text": "Do you skip around based on qualifications or employee status (vacation, sick, etc.)?", "topic": "List Management", "tier": 1},
-    {"id": 13, "text": "Are there any pauses while calling this list?", "topic": "List Management", "tier": 1},
+    # Section 3: Callout List Management
+    {"id": 7, "text": "After the first employee, is the next person called from the same list or a different one?", "topic": "List Management", "tier": 1},
+    {"id": 8, "text": "In total, how many different lists or groups are used to fully staff this callout?", "topic": "List Management", "tier": 1},
+    {"id": 9, "text": "Are the lists organized by job classification (e.g., 'Linemen,' 'Supervisors')? If not, what other attribute determines the order (e.g., overtime hours, seniority, special qualifications)?", "topic": "List Management", "tier": 1},
+    {"id": 10, "text": "When going through a list, do you follow a strict top-to-bottom order, or are people ever skipped?", "topic": "List Management", "tier": 1},
+    {"id": 11, "text": "If employees are skipped, what are the reasons? (e.g., based on qualifications, status like vacation/sick, etc.)", "topic": "List Management", "tier": 1},
+    {"id": 12, "text": "Are there any planned pauses between call attempts within the same list?", "topic": "List Management", "tier": 1},
     
-    # Insufficient Staffing
-    {"id": 14, "text": "What happens when you don't get the required number of people?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 15, "text": "Do you call a different list or location? Is there any delay?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 16, "text": "Will you offer positions to someone you wouldn't normally call?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 17, "text": "Will you consider or call the whole list again?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 18, "text": "Do you always handle insufficient staffing the same way, or does it vary?", "topic": "Insufficient Staffing", "tier": 1},
+    # Section 4: Handling Insufficient Staffing
+    {"id": 13, "text": "If you don't get the required number of people from the primary list, what is the next step?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 14, "text": "Is the primary list called a second time before moving on to other options?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 15, "text": "In critical situations, is the position ever offered to employees who would not normally be called?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 16, "text": "Is this procedure for when staffing is insufficient always the same, or does it vary depending on the situation (e.g., major emergency vs. routine)?", "topic": "Insufficient Staffing", "tier": 1},
     
-    # Calling Logistics
-    {"id": 19, "text": "Is there any issue with calling multiple employees simultaneously?", "topic": "Calling Logistics", "tier": 1},
-    {"id": 20, "text": "Is there any issue with calling multiple devices simultaneously?", "topic": "Calling Logistics", "tier": 1},
-    {"id": 21, "text": "Can someone say 'no, but call again if nobody else accepts'?", "topic": "Calling Logistics", "tier": 1},
-    {"id": 22, "text": "If someone says no on the first pass, are they called on the second pass?", "topic": "Calling Logistics", "tier": 1},
-    
-    # List Changes (2nd Tier)
-    {"id": 23, "text": "Do the order of the lists ever change over time?", "topic": "List Changes", "tier": 2},
-    {"id": 24, "text": "When and how does the list order change?", "topic": "List Changes", "tier": 2},
-    {"id": 25, "text": "Does the content of the lists (employees on them) ever change over time?", "topic": "List Changes", "tier": 2},
-    {"id": 26, "text": "When and how does the list content change?", "topic": "List Changes", "tier": 2},
-    
-    # Tiebreakers
-    {"id": 27, "text": "If you use overtime to order employees on lists, what are your tiebreakers?", "topic": "Tiebreakers", "tier": 2},
-    {"id": 28, "text": "What is your first tiebreaker if two employees have the same overtime hours?", "topic": "Tiebreakers", "tier": 2},
-    {"id": 29, "text": "What is your second tiebreaker?", "topic": "Tiebreakers", "tier": 2},
-    {"id": 30, "text": "What is your third tiebreaker?", "topic": "Tiebreakers", "tier": 2},
-    
-    # Additional Rules (3rd Tier)
-    {"id": 31, "text": "Would you ever email or text information to employees about the callout?", "topic": "Communication Rules", "tier": 3},
-    {"id": 32, "text": "Do you have rules preventing callouts before/after normal working shifts?", "topic": "Communication Rules", "tier": 3},
-    {"id": 33, "text": "Do you have rules that excuse declined callouts near shifts, vacations, or other schedule items?", "topic": "Communication Rules", "tier": 3},
+    # Section 5: Additional Rules and Logistics
+    {"id": 17, "text": "Is it possible for an employee to decline the callout but ask to be contacted again if no one else accepts? How is that situation managed?", "topic": "Additional Rules", "tier": 1},
+    {"id": 18, "text": "If an employee says no on the first pass through the list, are they contacted again on a second pass?", "topic": "Additional Rules", "tier": 1},
+    {"id": 19, "text": "Does the order or content of the lists ever change over time? If so, how often and what triggers it (e.g., new hires, changes in qualifications, balancing of overtime)?", "topic": "Additional Rules", "tier": 2},
+    {"id": 20, "text": "If the list order is based on overtime, what criteria are used as a tie-breaker if two employees have the same hours (e.g., seniority, hire date)?", "topic": "Additional Rules", "tier": 2},
+    {"id": 21, "text": "Besides calls, are other methods like emails or text messages used to provide information about the callout?", "topic": "Additional Rules", "tier": 2},
+    {"id": 22, "text": "Are there any rules that prevent calling someone right before or after their normal shift?", "topic": "Additional Rules", "tier": 2},
+    {"id": 23, "text": "Finally, are there any rules that would excuse an employee for declining a callout without it counting against them (e.g., if it's near their vacation, a scheduled shift, etc.)?", "topic": "Additional Rules", "tier": 2},
 ]
 
 class SimpleAIService:
@@ -155,82 +143,67 @@ Required AWS IAM Policy:
             # System unavailable - cannot proceed without AI
             return "❌ **System Unavailable** - The AI service is currently unavailable. Please contact your administrator to resolve the AWS Bedrock access issue."
         
-        # Create engaging, focused system prompt
-        system_prompt = f"""You are ACE, a friendly and professional AI assistant helping utility companies complete their ARCOS questionnaire. Your goal is to make this process engaging, efficient, and thorough.
+        # Get user context
+        user_name = st.session_state.user_info.get('name', 'there')
+        company_name = st.session_state.user_info.get('company', 'your organization')
+        utility_type = st.session_state.user_info.get('utility_type', 'utility organization')
+        
+        # Check if this is the last question
+        is_last_question = current_question_info['id'] == len(ACE_QUESTIONS)
+        
+        if is_last_question:
+            # Special handling for the final question
+            system_prompt = f"""You are ACE, an ARCOS questionnaire assistant. This is the FINAL question.
 
-CURRENT QUESTION: "{current_question_info['text']}"
-Question ID: {current_question_info['id']}
-Topic: {current_question_info['topic']} (Tier {current_question_info['tier']})
-Progress: Question {current_question_info['id']} of {len(ACE_QUESTIONS)}
+USER: {user_name} from {company_name} ({utility_type})
 
-🚨 CRITICAL: You MUST follow the structured questionnaire exactly. 
+🚨 FINAL QUESTION RULES:
+1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
+2. After they answer, say "Thank you! That completes our questionnaire." and STOP
+3. DO NOT ask any additional questions
+4. Keep responses to 1-2 sentences maximum
 
-CURRENT QUESTION TO ASK: "{current_question_info['text']}"
+FINAL QUESTION TO ASK: **{current_question_info['text']}**
 
-🔤 FORMATTING: When you ask this question, wrap it in **double asterisks** like this: **{current_question_info['text']}**
+RESPONSE PATTERN:
+- Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
+- Ask ONLY the exact question above in bold
+- STOP immediately
 
-🚫 STRICT RULES:
-- Ask ONLY the exact question shown above - nothing else
-- NO additional questions, follow-ups, or clarifications in the same response
-- NO multiple questions - one question per response ALWAYS
-- DO NOT ask for examples, elaboration, or "anything else" in the same response
+After their final answer, say: "Thank you! That completes our questionnaire."
 
-CONVERSATION GUIDELINES:
-✅ Be conversational, encouraging, and professional
-✅ Ask ONE question at a time and wait for the answer
-✅ Provide gentle, natural guidance to help users give more complete answers
-✅ If their answer seems vague, ask follow-up questions to get specifics
-✅ Keep acknowledgments brief and varied - avoid repetitive phrasing
-✅ Keep responses concise - aim for 1-2 sentences maximum
+EXAMPLE (only if user requests): {get_question_examples(current_question_info['id'])[0]}
 
-🚨 PRIVACY REQUIREMENTS:
-❌ NEVER ask for or encourage full legal names, employee SSNs, addresses, phone numbers
-❌ NEVER ask users to provide more personal information than what they initially offer
-✅ Accept any name format they provide (first name, full name, etc.) - they saw the privacy notice
-✅ Focus on processes and procedures, not personal details
-✅ For question 1 (name/company): Don't provide examples - just accept whatever they give
+You are completing a SCRIPTED questionnaire. This is the LAST question."""
+        else:
+            # Get the next question to ask after user answers current one
+            next_question_id = current_question_info['id'] + 1
+            next_question_text = ""
+            if next_question_id <= len(ACE_QUESTIONS):
+                next_question_text = ACE_QUESTIONS[next_question_id - 1]['text']
+            
+            # Simple system prompt that tells AI exactly what to do
+            if next_question_text:
+                system_prompt = f"""You are ACE, conducting an ARCOS questionnaire.
 
-ANSWER QUALITY GUIDANCE:
-- Encourage specific details: "Could you tell me more about..." or "What specifically happens when..."
-- Ask about the "why" behind processes: "What's the reason you do it that way?"
-- Help them think through edge cases: "Are there any situations where this might be different?"
-- Guide them toward complete answers without being pushy
+USER: {user_name} from {company_name} ({utility_type})
 
-EXAMPLES TO SHARE (when they ask "example", "help", or give vague answers):
-- Contact Process: "We call the on-call dispatcher first because they coordinate the response and know current crew availability."
-- List Management: "We have three lists: supervisors, lineworkers, and contractors, organized by seniority and overtime hours."
-- Calling Logistics: "We can call multiple people simultaneously using our automated system, but union rules require specific notification order."
-- Staffing: "We typically need 3-4 technicians for storm repairs, but only 1-2 for routine maintenance calls."
-- Insufficient Staffing: "When we're short, we first call our backup list from the neighboring district, then contact contractors if needed."
+CURRENT SITUATION: User is answering question {current_question_info['id']}: "{current_question_info['text']}"
 
-HELP TRIGGERS - If they say any of these, provide an example and gentle guidance:
-- "example", "help", "?", "what do you mean", "clarify", "explain", "I don't understand"
-- Very short answers (1-3 words)
-- Vague responses like "it depends", "various ways", "different methods"
+YOUR RESPONSE PATTERN:
+1. Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
+2. Ask the NEXT question: **{next_question_text}**
+3. STOP immediately
 
-Remember: You're helping them document their current processes clearly so ARCOS can be configured properly. Focus on understanding HOW they currently handle callouts with enough detail for technical implementation.
+ONLY provide examples if user types "example" or "help": {get_question_examples(current_question_info['id'])[0]}
 
-RESPONSE INSTRUCTIONS:
-- If the user's answer is complete/acceptable: Give brief acknowledgment (or none), then ask the NEXT question in bold
-- If their answer is too vague/short: Ask for clarification about the CURRENT question - do NOT advance to next question  
-- If they're asking for help/examples: provide guidance but do NOT ask the next question yet - wait for their actual answer
-- NEVER ask multiple questions in one response
-- NEVER add "anything else?", "any other details?", or similar phrases
-- Use **bold** formatting around question text for visibility
+Ask question {next_question_id} next."""
+            else:
+                system_prompt = f"""You are ACE. The questionnaire is complete.
 
-RESPONSE VARIATIONS - Use different acknowledgments:
-- "Got it!" / "Perfect!" / "Thanks!" / "Understood."
-- "That's helpful." / "Good to know." / "Clear."
-- Just move directly to the next question without acknowledgment
+USER: {user_name} from {company_name} ({utility_type})
 
-EXAMPLE FORMATS (vary these):
-"Got it! **{current_question_info['text']}**"
-"Perfect. **{current_question_info['text']}**" 
-"**{current_question_info['text']}**"
-
-🚨 CRITICAL: The question MUST be wrapped in **double asterisks** for bold formatting.
-
-🚨 IMPORTANT: If the current question ID is 2 or higher, the user has already provided their name in a previous question. Do not ask for their name again."""
+The user just answered the final question. Say: "Thank you! That completes our questionnaire." and STOP."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -243,7 +216,7 @@ EXAMPLE FORMATS (vary these):
             # API call to Claude
             body = {
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,
+                "max_tokens": 150,  # Keep responses very short like original ACEBot
                 "temperature": 0.7,
                 "system": system_prompt,
                 "messages": messages
@@ -270,7 +243,81 @@ EXAMPLE FORMATS (vary these):
         except Exception as e:
             st.error(f"AI service error: {str(e)}")
             return "❌ **System Unavailable** - The AI service encountered an error. Please contact your administrator."
+
+
+class SimpleEmailService:
+    """Simple email notification service"""
     
+    def __init__(self):
+        """Initialize email service from secrets or environment variables"""
+        # Try Streamlit secrets first, then environment variables
+        if hasattr(st, 'secrets'):
+            self.sender_email = st.secrets.get("EMAIL_SENDER", os.getenv("EMAIL_SENDER", ""))
+            self.sender_password = st.secrets.get("EMAIL_PASSWORD", os.getenv("EMAIL_PASSWORD", ""))
+            self.recipient_email = st.secrets.get("EMAIL_RECIPIENT", os.getenv("EMAIL_RECIPIENT", ""))
+            self.smtp_server = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
+            self.smtp_port = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", "587")))
+        else:
+            self.sender_email = os.getenv("EMAIL_SENDER", "")
+            self.sender_password = os.getenv("EMAIL_PASSWORD", "")
+            self.recipient_email = os.getenv("EMAIL_RECIPIENT", "")
+            self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+            self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    
+    def is_configured(self):
+        """Check if email service is properly configured"""
+        return bool(self.sender_email and self.sender_password and self.recipient_email)
+    
+    def send_completion_notification(self, user_info, summary_text):
+        """Send email notification when questionnaire is completed"""
+        if not self.is_configured():
+            return {"success": False, "message": "Email not configured - notification not sent"}
+        
+        try:
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.sender_email
+            msg['To'] = self.recipient_email
+            msg['Subject'] = f"ACE Questionnaire Completed - {user_info.get('name', 'Unknown')} from {user_info.get('company', 'Unknown')}"
+            
+            # Create email body
+            body = f"""
+            <html>
+            <body>
+            <h2>ACE Questionnaire Completed</h2>
+            <p><strong>Status:</strong> ✅ Completed</p>
+            <p><strong>User:</strong> {user_info.get('name', 'Unknown')}</p>
+            <p><strong>Company:</strong> {user_info.get('company', 'Unknown')}</p>
+            <p><strong>Email:</strong> {user_info.get('email', 'Unknown')}</p>
+            <p><strong>Utility Type:</strong> {user_info.get('utility_type', 'Unknown')}</p>
+            <p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>Questions Answered:</strong> {len(st.session_state.answers)}/23</p>
+            
+            <h3>Next Steps</h3>
+            <p>The completed questionnaire responses are attached as a summary file. Please review the responses to configure ARCOS according to the documented callout process.</p>
+            </body>
+            </html>
+            """
+            msg.attach(MIMEText(body, 'html'))
+            
+            # Attach summary file
+            attachment = MIMEApplication(summary_text.encode('utf-8'))
+            company_name = user_info.get('company', 'Company').replace(' ', '_')
+            filename = f"ACE_Summary_{company_name}_{datetime.now().strftime('%Y%m%d')}.md"
+            attachment.add_header('Content-Disposition', 'attachment', filename=filename)
+            msg.attach(attachment)
+            
+            # Send email
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.sender_email, self.sender_password)
+                server.send_message(msg)
+            
+            return {"success": True, "message": f"Email notification sent to {self.recipient_email}"}
+        
+        except Exception as e:
+            return {"success": False, "message": f"Failed to send email: {str(e)}"}
+
 
 def init_session_state():
     """Initialize simple, reliable session state"""
@@ -284,7 +331,7 @@ def init_session_state():
         st.session_state.conversation = []
     
     if 'user_info' not in st.session_state:
-        st.session_state.user_info = {"name": "", "company": "", "title": ""}
+        st.session_state.user_info = {"name": "", "company": "", "email": "", "utility_type": ""}
     
     if 'completed' not in st.session_state:
         st.session_state.completed = False
@@ -299,33 +346,159 @@ def get_current_question():
         return ACE_QUESTIONS[current_num - 1]
     return None
 
-def extract_user_info(user_input):
-    """Simple extraction of user info from first response"""
-    # Look for patterns like "John Smith - ABC Company" or "John from ABC"
-    if " - " in user_input:
-        parts = user_input.split(" - ")
-        name = parts[0].strip()
-        company = " - ".join(parts[1:]).strip()
-        return name, company
-    elif " from " in user_input.lower():
-        parts = user_input.lower().split(" from ")
-        name = parts[0].strip()
-        company = " from ".join(parts[1:]).strip()
-        return name, company
-    elif " at " in user_input.lower():
-        parts = user_input.lower().split(" at ")
-        name = parts[0].strip()
-        company = " at ".join(parts[1:]).strip()
-        return name, company
-    else:
-        # Default: assume first word is name, rest is company
-        words = user_input.strip().split()
-        if len(words) >= 2:
-            name = words[0]
-            company = " ".join(words[1:])
-            return name, company
+def get_question_examples(question_id):
+    """Get specific examples for each question showing ideal customer responses"""
+    examples = {
+        1: [  # Describe the type of situation or event that triggers this callout process
+            "We use this callout process for power outages affecting 500 or more customers, typically caused by storms, equipment failures, or vehicle accidents that damage our infrastructure.",
+            "This process is triggered when we receive reports of gas leaks from the public or our automated detection systems. Safety is our top priority, so we respond immediately.",
+            "We activate callouts for water main breaks that disrupt service to neighborhoods. These usually happen due to aging infrastructure, ground shifts, or extreme weather conditions."
+        ],
+        2: [  # How many employees, and with which roles or job classifications, are typically required?
+            "For power restoration, we typically need 2 journeyman linemen and 1 crew supervisor. The supervisor coordinates with dispatch while the linemen handle the actual repair work.",
+            "Gas leak responses require 1 certified gas technician and 1 safety officer. The technician handles the repair while the safety officer manages the scene and coordinates with emergency services if needed.",
+            "Water main breaks usually need 3 field technicians and 1 crew leader. Two technicians work on the repair, one operates equipment, and the leader coordinates with customers and traffic control."
+        ],
+        3: [  # Who is contacted first, and what is the main reason?
+            "We contact our on-call supervisor first because they need to assess the situation, coordinate resources, and determine if additional specialized crews or equipment are needed before dispatching field workers.",
+            "Our lead technician gets the first call because they have 15 years of experience and can quickly determine the scope of work needed. They also coordinate with other crew members and ensure we have the right tools on site.",
+            "We call our operations dispatcher first since they maintain real-time visibility of all crew locations and availability. They can immediately identify the closest available team and coordinate multiple crews if needed."
+        ],
+        4: [  # How many devices are used to try and reach them?
+            "We try to reach them on two devices: their company cell phone first, then their personal cell phone if there's no answer within 2 minutes.",
+            "Three devices: we start with their office phone, then try their mobile phone, and finally use the two-way radio system if they're already in the field.",
+            "Just one primary device - their assigned work cell phone. Everyone is required to keep it on and charged during their on-call periods."
+        ],
+        5: [  # Are those devices contacted one by one or all at the same time?
+            "We contact them sequentially - work phone first, wait 2 minutes for a response, then try their personal cell. This gives them time to answer before we move to the next device.",
+            "We call both their work phone and personal cell simultaneously because emergency situations require the fastest possible response time.",
+            "One by one in order: office phone first, then mobile after 30 seconds if no answer. We don't want to overwhelm them with multiple calls at once."
+        ],
+        6: [  # What types of devices are primarily used?
+            "Primarily cell phones because our crews need to be mobile and reachable whether they're at home, in the field, or traveling between job sites.",
+            "We use a combination of two-way radios for field communication and cell phones for initial contact. Radios work better in remote areas where cell coverage is spotty.",
+            "Company-issued smartphones with our emergency response app installed. The app shows incident details, maps, and allows crews to update their status in real-time."
+        ],
+        7: [  # After the first employee, is the next person called from the same list?
+            "Same list - we continue down our supervisor list in order based on overtime hours until we get the required number of people.",
+            "Different list - once we have a supervisor, we move to our technician list to get the field workers needed for the job.",
+            "We stay on the same list until it's exhausted, then move to our backup list from the neighboring district."
+        ],
+        8: [  # How many different lists or groups are used?
+            "We use three main lists: supervisors, journeyman technicians, and apprentices. Each has different qualifications and we need specific combinations depending on the job type.",
+            "Two lists total: our primary crew list with full-time employees, and our backup contractor list that we use when the primary crew is unavailable or we need additional resources.",
+            "Four different lists: operations supervisors, field technicians, equipment operators, and our approved contractor vendors. Complex jobs might require people from multiple lists."
+        ],
+        9: [  # Are the lists organized by job classification or other attribute?
+            "Lists are organized by job classification first - supervisors, journeymen, apprentices - then within each classification they're ordered by overtime hours worked, with lowest hours called first.",
+            "We organize primarily by overtime balance. Everyone's hours are tracked and updated weekly, so the person with the fewest overtime hours gets called first regardless of their specific job title.",
+            "Geographic location is our main organizing principle. We have separate lists for each service territory, and we call the closest available crew to minimize response time."
+        ],
+        10: [  # Do you follow strict top-to-bottom order or skip around?
+            "Strict top-to-bottom order based on overtime hours. This ensures fair distribution of overtime opportunities and everyone knows exactly where they stand on the list.",
+            "We skip people who are on vacation, sick leave, or have other approved time off. Our dispatcher maintains a daily availability list to know who to skip.",
+            "Generally top-to-bottom, but we'll skip someone if they don't have the required certifications for that specific type of work. For example, not everyone is qualified for high-voltage repairs."
+        ],
+        11: [  # If employees are skipped, what are the reasons?
+            "We skip employees who are on approved vacation time, sick leave, or have submitted time-off requests that were already approved by their supervisor.",
+            "Main reasons for skipping: they lack the required certification for the specific work, they're currently assigned to another emergency call, or they're outside our response area.",
+            "We skip people who are too far from the incident location - if someone is more than 45 minutes away and we have closer options, we'll call the closer crew first."
+        ],
+        12: [  # Are there any planned pauses between call attempts?
+            "Yes, we wait 2 minutes between each person to give them adequate time to answer. People might be in the shower, driving, or need a moment to check their availability.",
+            "No planned pauses - we call continuously down the list until someone answers. In emergency situations, speed is more important than convenience.",
+            "We pause for 5 minutes after every 3rd call to reassess the situation and make sure we're still calling the right type of personnel for what's actually needed."
+        ],
+        13: [  # If you don't get required number from primary list, what's next?
+            "We contact our mutual aid partners in the neighboring utility district. We have formal agreements to help each other during emergencies and they usually have crews available.",
+            "Our next step is calling approved contractors from our vendor list. These are pre-qualified companies that meet our safety standards and know our systems.",
+            "We escalate to our emergency management coordinator who can authorize calling in off-duty employees on overtime or request assistance from other departments."
+        ],
+        14: [  # Is primary list called second time before other options?
+            "Yes, we go through our primary list twice before moving to contractors. Sometimes people's situations change or they didn't hear the first call.",
+            "No, we immediately move to our backup district crew. If our primary people aren't available, we need to get resources mobilized quickly rather than waste time on repeat calls.",
+            "Only during critical emergencies like major storms. For routine callouts, we use contractors if the first pass through our list doesn't get enough people."
+        ],
+        15: [  # In critical situations, offer to employees not normally called?
+            "During major storms, we'll contact recently retired employees who still maintain their certifications and are willing to help during emergencies. They know our systems and can be very valuable.",
+            "Yes, we'll ask office staff to help with non-technical support roles like coordinating with customers, managing logistics, or handling paperwork so field crews can focus on repairs.",
+            "We'll call in off-duty employees from other shifts and offer overtime pay. During major outages, we need all hands on deck and most people are willing to help."
+        ],
+        16: [  # Is insufficient staffing procedure always the same or varies?
+            "Same procedure every time - consistency is important so everyone knows what to expect. We always follow the same escalation process regardless of the situation type.",
+            "It varies by emergency type. Storm responses get different treatment than routine repairs - we'll mobilize contractors faster and call in more resources for weather-related emergencies.",
+            "Different procedures for weekends versus weekdays because contractor availability changes and our mutual aid agreements have different response times on weekends."
+        ],
+        17: [  # Can employee decline but ask to be contacted again?
+            "Yes, they can say 'call me back if no one else accepts the callout.' This usually happens when they have a family commitment but could rearrange things if we really need them.",
+            "No, once someone declines a callout, they're marked unavailable for that specific incident. We don't want to put pressure on people or create confusion about who's actually coming in.",
+            "Only for non-emergency situations. During routine maintenance callouts, people can ask to be called back, but for emergency responses we need definitive yes or no answers."
+        ],
+        18: [  # If someone says no on first pass, contacted on second pass?
+            "No, if they declined on the first pass, we respect that decision and don't call them again for that same incident. It would be unfair to pressure people who already said no.",
+            "Yes, we do call them again on the second pass because their circumstances might have changed, or they might reconsider if they know we're really short-staffed.",
+            "We only call them again if absolutely no one else accepted and it's a critical emergency. In that case, we explain the situation has escalated and ask if they can help."
+        ],
+        19: [  # Does order/content of lists change over time?
+            "We update the lists monthly based on overtime hours worked. As people accumulate overtime, they move down the list so the burden gets distributed fairly among all employees.",
+            "Lists are updated immediately whenever we have new hires, retirements, or people change positions. Our HR department notifies operations within 24 hours of any personnel changes.",
+            "Quarterly rebalancing to make sure callout frequency is distributed evenly. We track how often each person gets called and adjust the order to ensure fairness."
+        ],
+        20: [  # What criteria for tie-breaker if same overtime hours?
+            "Seniority is our first tie-breaker - the person who's been with the company longer gets called first when overtime hours are equal.",
+            "We use hire date as the tie-breaker, but in reverse - the most recently hired person gets called first. This helps newer employees get overtime opportunities to supplement their income.",
+            "Alphabetical order by last name. It's simple, fair, and removes any appearance of favoritism when people have identical overtime hours."
+        ],
+        21: [  # Other methods like emails or text messages?
+            "We send text messages after making successful phone contact to provide incident details, location information, and estimated duration. The text serves as a written record of the assignment.",
+            "Email notifications go to supervisors and management to keep them informed about callout status and crew assignments, but we don't use email for the actual callouts since it's not immediate enough.",
+            "No, we only use phone calls for the actual callouts. Text and email aren't reliable enough for emergency situations where immediate response is critical."
+        ],
+        22: [  # Rules preventing calls before/after normal shift?
+            "We avoid calling anyone within 2 hours of their scheduled shift start or end time. This gives people time to rest between shifts and ensures they're alert when they come to work.",
+            "No restrictions - emergencies don't follow normal business hours. If we need someone, we call them regardless of when their shift starts or ends.",
+            "We try to avoid calls 1 hour before scheduled shifts when possible, but during major emergencies those rules get suspended and we call whoever we need."
+        ],
+        23: [  # Rules that excuse declined callouts?
+            "Vacation requests that were approved in advance automatically excuse someone from declining a callout. We also excuse people for medical appointments or documented family emergencies.",
+            "If someone worked within the past 8 hours, they can decline without it counting against them. We want people to be rested and safe.",
+            "No formal excuses - being available for callouts is part of the job expectations. However, supervisors use discretion for legitimate personal emergencies."
+        ]
+    }
     
-    return user_input.strip(), ""
+    return examples.get(question_id, ["Provide specific details about your current process"])
+
+def infer_utility_type(company_name):
+    """Infer utility type from company name"""
+    company_lower = company_name.lower()
+    
+    # Electric utilities
+    electric_keywords = ['electric', 'power', 'energy', 'grid', 'transmission', 'distribution']
+    if any(keyword in company_lower for keyword in electric_keywords):
+        return "electric utility"
+    
+    # Gas utilities
+    gas_keywords = ['gas', 'natural gas', 'lng', 'pipeline']
+    if any(keyword in company_lower for keyword in gas_keywords):
+        return "gas utility"
+    
+    # Water utilities
+    water_keywords = ['water', 'wastewater', 'sewer', 'municipal']
+    if any(keyword in company_lower for keyword in water_keywords):
+        return "water utility"
+    
+    # Telecommunications
+    telecom_keywords = ['telecom', 'telephone', 'communications', 'broadband', 'fiber']
+    if any(keyword in company_lower for keyword in telecom_keywords):
+        return "telecommunications utility"
+    
+    # Multi-utility or generic
+    utility_keywords = ['utility', 'utilities', 'public service']
+    if any(keyword in company_lower for keyword in utility_keywords):
+        return "utility company"
+    
+    # Default if no clear match
+    return "utility organization"
 
 def display_progress():
     """Beautiful, encouraging progress display"""
@@ -382,11 +555,7 @@ def is_help_request(user_input, current_question_id=None):
     if any(keyword in user_lower for keyword in help_keywords):
         return True
     
-    # For Question 1 (name/company), don't treat short answers as help requests
-    if current_question_id == 1:
-        return False  # Name/company answers should always be accepted as-is
-    
-    # Check for very short answers (might need more detail) - but not for Question 1
+    # Check for very short answers (might need more detail)
     words = user_input.strip().split()
     if len(words) <= 2 and len(user_input.strip()) < 10:
         return True
@@ -397,6 +566,54 @@ def is_help_request(user_input, current_question_id=None):
     
     return False
 
+def find_next_relevant_question(start_question_num, answers):
+    """Smart question skipping based on previous answers (like original ACEBot)"""
+    current_num = start_question_num
+    
+    # Skip questions based on previous answers to avoid redundancy
+    while current_num <= len(ACE_QUESTIONS):
+        current_q = ACE_QUESTIONS[current_num - 1]  # Convert to 0-indexed
+        
+        # Check if this question should be skipped based on previous answers
+        should_skip = False
+        
+        # Get all previous answers as text
+        all_previous_answers = " ".join(answers.values()).lower()
+        
+        # Question-specific skip logic (like original ACEBot)
+        if current_q["id"] == 6:  # "How many people do you typically call out?"
+            # Skip if already mentioned numbers in staffing questions
+            if any(word in all_previous_answers for word in ["2", "3", "4", "5", "crew", "team", "people", "employees"]):
+                should_skip = True
+                
+        elif current_q["id"] == 8:  # "Are your lists organized by job classification?"
+            # Skip if already mentioned job classes or roles
+            if any(word in all_previous_answers for word in ["supervisor", "foreman", "technician", "journeyman", "apprentice", "classification", "role", "job"]):
+                should_skip = True
+                
+        elif current_q["id"] == 11:  # "Do you use overtime ordering?"
+            # Skip if they clearly don't use overtime systems
+            if any(phrase in all_previous_answers for phrase in ["no overtime", "don't use overtime", "rotation", "rotating", "weekly", "standby"]):
+                should_skip = True
+                
+        elif current_q["id"] == 14:  # "Are there delays between calling different groups?"
+            # Skip if they mentioned single list or no multiple groups
+            if any(phrase in all_previous_answers for phrase in ["one list", "single list", "same list", "don't have multiple"]):
+                should_skip = True
+                
+        elif current_q["id"] == 17:  # "How do you handle list changes over time?"
+            # Skip if they already explained list management in detail
+            if any(word in all_previous_answers for word in ["update", "change", "quarterly", "monthly", "weekly", "automatic"]) and len(all_previous_answers) > 200:
+                should_skip = True
+                
+        # If we should skip, try next question
+        if should_skip:
+            current_num += 1
+        else:
+            break
+    
+    return current_num
+
 def generate_summary():
     """Generate a clean summary of all answers"""
     if not st.session_state.answers:
@@ -405,6 +622,8 @@ def generate_summary():
     summary = f"# ACE Questionnaire Summary\n"
     summary += f"**Participant:** {st.session_state.user_info.get('name', 'Unknown')}\n"
     summary += f"**Company:** {st.session_state.user_info.get('company', 'Unknown')}\n"
+    summary += f"**Email:** {st.session_state.user_info.get('email', 'Unknown')}\n"
+    summary += f"**Utility Type:** {st.session_state.user_info.get('utility_type', 'Unknown')}\n"
     summary += f"**Date:** {datetime.now().strftime('%B %d, %Y')}\n"
     summary += f"**Questions Completed:** {len(st.session_state.answers)}/{len(ACE_QUESTIONS)}\n\n"
     
@@ -476,6 +695,7 @@ def main():
     # Initialize
     init_session_state()
     ai_service = SimpleAIService()
+    email_service = SimpleEmailService()
     
     # Sidebar
     with st.sidebar:
@@ -493,33 +713,34 @@ def main():
         if current_q:
             st.write(f"**Topic:** {current_q['topic']}")
             st.write(f"**Tier:** {current_q['tier']}")
-            
+        
+        # Always show guidance section when questionnaire is active
+        if st.session_state.started and current_q:
             # Add contextual help hints
             st.markdown("---")
             st.subheader("💡 Answer Guidance")
             
-            # Topic-specific guidance (skip for Basic Info name/company question)
-            if current_q['id'] == 1:
-                # Don't show guidance for name/company - they already saw privacy notice
-                st.info("🎯 Just provide your name and company as you prefer - you've already seen our privacy guidelines.")
-            else:
-                topic_tips = {
-                    "Basic Info": "Be specific about the types of situations and provide concrete details.",
-                    "Staffing": "Mention specific numbers and types of employees (e.g., '3 lineworkers, 1 supervisor').",
-                    "Contact Process": "Explain who you call and why - the reasoning helps configure the system properly.",
-                    "List Management": "Describe how lists are organized (seniority, overtime, geography, etc.).",
-                    "Insufficient Staffing": "Detail your backup procedures and any special rules for emergency situations.",
-                    "Calling Logistics": "Mention any timing rules, simultaneous calling policies, or union requirements.",
-                    "List Changes": "Explain how often and why lists change (monthly updates, overtime tracking, etc.).",
-                    "Tiebreakers": "List tiebreakers in order of priority (1st: overtime, 2nd: seniority, etc.).",
-                    "Communication Rules": "Include any restrictions on calling times, notification methods, or exemptions."
-                }
-                
-                tip = topic_tips.get(current_q['topic'], "Be specific and explain the 'why' behind your processes.")
-                st.info(f"🎯 {tip}")
+            # Topic-specific guidance
+            topic_tips = {
+                "Basic Information": "Be specific about the types of situations and provide concrete details about personnel needs.",
+                "Contact Process": "Explain who you call first and why - the reasoning helps configure the system properly.",
+                "List Management": "Describe how lists are organized and managed (seniority, overtime, geography, etc.).",
+                "Insufficient Staffing": "Detail your backup procedures and contingency plans for critical situations.",
+                "Additional Rules": "Include timing restrictions, communication methods, exemptions, and any special policies."
+            }
             
-            # Universal help reminder
-            st.markdown("**Need help?** Just type 'example' or 'help' for guidance!")
+            tip = topic_tips.get(current_q['topic'], "Be specific and explain the 'why' behind your processes.")
+            st.info(f"🎯 {tip}")
+            
+            # Show ONE question-specific example that syncs with current question
+            st.markdown("**💡 Example Answer:**")
+            examples = get_question_examples(current_q['id'])
+            if examples:
+                # Show only the first example, fully visible
+                current_example = examples[0]
+                st.markdown(f"*\"{current_example}\"*")
+            
+            st.markdown("**Need help?** Just type 'example' or 'help' for more guidance!")
         
         st.markdown("---")
         # Reset button
@@ -551,6 +772,18 @@ def main():
                 file_name=f"ACE_Summary_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.md",
                 mime="text/markdown"
             )
+            
+            # Email notification
+            if email_service.is_configured():
+                if st.button("📧 Send Email Notification", type="secondary"):
+                    with st.spinner("Sending email..."):
+                        result = email_service.send_completion_notification(st.session_state.user_info, summary_text)
+                        if result["success"]:
+                            st.success(f"✅ {result['message']}")
+                        else:
+                            st.error(f"❌ {result['message']}")
+            else:
+                st.info("📧 Email notifications not configured")
         
         # Show detailed responses
         if st.expander("📖 View All Responses", expanded=False):
@@ -563,10 +796,11 @@ def main():
             st.markdown("""
                 ### 👋 Welcome to the ACE Questionnaire!
                 
-                I'm here to help you document your utility company's callout processes for ARCOS implementation. 
-                This should take about **15-20 minutes** and will help ensure ARCOS is configured perfectly for your needs.
+                I'm here to help you document your organization's callout processes for ARCOS implementation. 
+                This streamlined questionnaire should take about **10-15 minutes** and will help ensure ARCOS is configured perfectly for your needs.
                 
                 **What to expect:**
+                - 23 focused questions covering 5 key areas of your callout process
                 - I'll ask you questions about how you currently handle callouts
                 - Feel free to ask for examples if anything is unclear  
                 - We'll go through this step-by-step at your pace
@@ -584,18 +818,41 @@ def main():
                 
                 ---
                 
-                Ready to get started?
+                **📝 Please provide your information to get started:**
             """)
             
-            if st.button("🚀 Let's Begin!", type="primary"):
-                st.session_state.started = True
-                # Add welcome message to conversation
-                welcome_msg = """Hi! I'm ACE, your questionnaire assistant. Let's start documenting your callout process. 
+            # User information form
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("👤 Your Name", placeholder="e.g., John Smith")
+                company = st.text_input("🏢 Company/Organization", placeholder="e.g., ABC Electric Utility")
+            with col2:
+                email = st.text_input("📧 Email Address", placeholder="e.g., john.smith@abcelectric.com")
+                st.write("")  # Spacer for alignment
+            
+            st.markdown("---")
+            
+            # Validation and start button
+            if name and company and email:
+                if st.button("🚀 Let's Begin!", type="primary"):
+                    # Store user information
+                    st.session_state.user_info["name"] = name.strip()
+                    st.session_state.user_info["company"] = company.strip()
+                    st.session_state.user_info["email"] = email.strip()
+                    st.session_state.user_info["utility_type"] = infer_utility_type(company)
+                    
+                    st.session_state.started = True
+                    
+                    # Add welcome message to conversation with utility type context
+                    utility_type = st.session_state.user_info["utility_type"]
+                    welcome_msg = f"""Hi {name}! I'm ACE, your questionnaire assistant. I see you work for a {utility_type}. Let's start documenting your callout process with our streamlined 23-question format.
 
-First, could you please provide your name and company name?"""
+**{ACE_QUESTIONS[0]['text']}**"""
                 
-                st.session_state.conversation.append({"role": "assistant", "content": welcome_msg})
-                st.rerun()
+                    st.session_state.conversation.append({"role": "assistant", "content": welcome_msg})
+                    st.rerun()
+            else:
+                st.info("Please fill in all fields to continue.")
         
         else:
             # Show conversation
@@ -615,12 +872,6 @@ First, could you please provide your name and company name?"""
                     # Add user message to conversation
                     st.session_state.conversation.append({"role": "user", "content": user_input})
                     
-                    # Extract user info from first question
-                    if current_q["id"] == 1 and not st.session_state.user_info["name"]:
-                        name, company = extract_user_info(user_input)
-                        st.session_state.user_info["name"] = name
-                        st.session_state.user_info["company"] = company
-                    
                     # Get AI response using the stored question info
                     ai_response = ai_service.get_response(st.session_state.conversation, current_question_for_ai)
                     
@@ -639,31 +890,58 @@ First, could you please provide your name and company name?"""
                             # Add AI response to conversation first
                             st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                             
-                            # Check if this is a clarification request (AI asking for more info about current question)
-                            clarification_indicators = [
-                                "could you elaborate", "can you provide more", "could you be more specific",
-                                "can you tell me more", "could you explain", "what do you mean by",
-                                "can you clarify", "could you give me more details", "help us understand",
-                                "for example, are they", "such as", "like what", "why", "how", "what kind"
-                            ]
+                            # AGGRESSIVE ADVANCEMENT: Check if user provided substantive answer
+                            # Don't advance only for these specific cases:
+                            # 1. Very short responses that don't address the question
+                            # 2. Obvious requests for help/examples
+                            # 3. AI explicitly asking for clarification with question words
                             
-                            is_clarification = any(indicator in ai_response.lower() for indicator in clarification_indicators)
+                            user_input_lower = user_input.lower().strip()
+                            ai_response_lower = ai_response.lower()
                             
-                            # Check if AI response contains the NEXT question (means answer was accepted)
-                            next_question_text = ""
-                            if st.session_state.current_question < len(ACE_QUESTIONS):
-                                next_question_text = ACE_QUESTIONS[st.session_state.current_question]['text']
+                            # Check if user gave a very short non-substantive response
+                            is_too_short = len(user_input.strip()) < 5
                             
-                            # Only advance if answer was accepted (AI asked next question) and not asking for clarification
-                            if next_question_text and next_question_text in ai_response and not is_clarification:
-                                # Answer accepted - store it and advance
+                            # Check if AI is asking clarifying questions about the SAME topic (not next question)
+                            # Only consider it clarification if AI is asking for more details WITHOUT bold question
+                            has_bold_question = "**" in ai_response
+                            has_question_mark = "?" in ai_response
+                            has_clarification_words = any(word in ai_response_lower for word in ["could you elaborate", "can you provide more", "could you be more specific", "what do you mean", "can you clarify"])
+                            
+                            is_ai_asking_clarification = (
+                                has_question_mark and 
+                                has_clarification_words and
+                                not has_bold_question  # If there's a bold question, it's likely the next question
+                            )
+                            
+                            # Check if user is asking for help
+                            is_user_help_request = any(phrase in user_input_lower for phrase in ["example", "help", "?", "what do you mean", "clarify", "explain"])
+                            
+                            # ADVANCE UNLESS we shouldn't
+                            should_not_advance = (
+                                is_too_short or 
+                                is_ai_asking_clarification or 
+                                is_user_help_request
+                            )
+                            
+                            if not should_not_advance:
+                                # Store answer 
                                 st.session_state.answers[current_q["id"]] = user_input
-                                st.session_state.current_question += 1
-                            elif st.session_state.current_question >= len(ACE_QUESTIONS):
-                                # Last question - check if it's a completion message
-                                if "completes our questionnaire" in ai_response.lower() or ("all" in ai_response.lower() and "questions completed" in ai_response.lower()):
-                                    st.session_state.answers[current_q["id"]] = user_input
+                                
+                                # Check if this was the last question
+                                if st.session_state.current_question >= len(ACE_QUESTIONS):
+                                    # We've completed all questions
                                     st.session_state.completed = True
+                                else:
+                                    # Smart question skipping based on previous answers
+                                    original_next_question = st.session_state.current_question + 1
+                                    next_question = find_next_relevant_question(original_next_question, st.session_state.answers)
+                                    
+                                    if next_question > len(ACE_QUESTIONS):
+                                        # Skipped to beyond the last question
+                                        st.session_state.completed = True
+                                    else:
+                                        st.session_state.current_question = next_question
                             # If it's clarification or no next question found, don't advance (stay on current question)
                     
                     st.rerun()
