@@ -338,6 +338,9 @@ def init_session_state():
     
     if 'started' not in st.session_state:
         st.session_state.started = False
+    
+    if 'summary_text' not in st.session_state:
+        st.session_state.summary_text = ""
 
 def get_current_question():
     """Get current question info"""
@@ -506,14 +509,7 @@ def display_progress():
     total = len(ACE_QUESTIONS)
     progress = min((current - 1) / total, 1.0)  # -1 because we show progress after completing questions
     
-    # Progress bar with custom styling
-    st.markdown("""
-        <style>
-        .stProgress > div > div > div > div {
-            background: linear-gradient(90deg, #ff6b6b, #ee5a24, #ff9f43, #feca57);
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # Progress bar styling is now in main CSS
     
     st.progress(progress)
     
@@ -565,6 +561,61 @@ def is_help_request(user_input, current_question_id=None):
         return True
     
     return False
+
+def update_realtime_summary(question_id, answer_text):
+    """Update the summary in real-time as each question is answered"""
+    question = next((q for q in ACE_QUESTIONS if q["id"] == question_id), None)
+    if not question:
+        return
+    
+    # Initialize summary if starting fresh
+    if not st.session_state.summary_text:
+        st.session_state.summary_text = f"""# ACE Questionnaire Summary
+**Participant:** {st.session_state.user_info.get('name', 'Unknown')}
+**Company:** {st.session_state.user_info.get('company', 'Unknown')}
+**Email:** {st.session_state.user_info.get('email', 'Unknown')}
+**Utility Type:** {st.session_state.user_info.get('utility_type', 'Unknown')}
+**Date:** {datetime.now().strftime('%B %d, %Y')}
+**Questions Completed:** 0/{len(ACE_QUESTIONS)}
+
+"""
+        # Initialize topic sections
+        topics_initialized = set()
+    
+    # Add this Q&A to the appropriate topic section
+    topic = question["topic"]
+    qa_entry = f"""**Q:** {question['text']}
+**A:** {answer_text}
+
+"""
+    
+    # Check if this topic section exists in the summary
+    if f"## {topic}" not in st.session_state.summary_text:
+        # Add new topic section
+        st.session_state.summary_text += f"## {topic}\n{qa_entry}"
+    else:
+        # Append to existing topic section
+        # Find the position to insert (before next topic or at end)
+        topic_start = st.session_state.summary_text.find(f"## {topic}")
+        next_topic_start = st.session_state.summary_text.find("## ", topic_start + 1)
+        
+        if next_topic_start == -1:
+            # This is the last topic, append at end
+            st.session_state.summary_text += qa_entry
+        else:
+            # Insert before next topic
+            st.session_state.summary_text = (
+                st.session_state.summary_text[:next_topic_start] + 
+                qa_entry + 
+                st.session_state.summary_text[next_topic_start:]
+            )
+    
+    # Update the questions completed count
+    completed_count = len(st.session_state.answers)
+    st.session_state.summary_text = st.session_state.summary_text.replace(
+        f"**Questions Completed:** {completed_count-1}/{len(ACE_QUESTIONS)}",
+        f"**Questions Completed:** {completed_count}/{len(ACE_QUESTIONS)}"
+    )
 
 def find_next_relevant_question(start_question_num, answers):
     """Smart question skipping based on previous answers (like original ACEBot)"""
@@ -658,28 +709,52 @@ def main():
         layout="wide"
     )
     
-    # Custom CSS for better styling
+    # Custom CSS for ARCOS brand styling (red/white theme)
     st.markdown("""
         <style>
         .main-header {
             text-align: center;
-            padding: 2rem 0;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            padding: 1.2rem 0;
+            background: #E31E24;
             color: white;
-            border-radius: 10px;
-            margin-bottom: 2rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .main-header h1 {
+            font-size: 2.2rem !important;
+            margin-bottom: 0.3rem !important;
+        }
+        .main-header p {
+            font-size: 1rem !important;
+            margin: 0 !important;
+            opacity: 0.9;
         }
         .stButton > button {
-            background: linear-gradient(90deg, #ff6b6b, #ee5a24);
+            background: #E31E24;
             color: white;
             border: none;
-            border-radius: 20px;
-            padding: 0.5rem 2rem;
+            border-radius: 6px;
+            padding: 0.5rem 1.5rem;
             font-weight: bold;
         }
         .stButton > button:hover {
-            background: linear-gradient(90deg, #ee5a24, #ff6b6b);
+            background: #c41e20;
             border: none;
+        }
+        .stProgress > div > div > div > div {
+            background: linear-gradient(90deg, #E31E24, #ff4444) !important;
+        }
+        /* Sidebar styling */
+        .css-1d391kg {
+            padding-top: 1rem;
+        }
+        /* Compact sidebar text */
+        .sidebar .element-container {
+            margin-bottom: 0.5rem;
+        }
+        /* Make example text smaller and more compact */
+        .sidebar .stMarkdown {
+            font-size: 0.85rem;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -697,54 +772,46 @@ def main():
     ai_service = SimpleAIService()
     email_service = SimpleEmailService()
     
-    # Sidebar
+    # Compact Sidebar
     with st.sidebar:
-        st.header("📊 Your Progress")
+        # Compact progress section
+        st.markdown("### 📊 Progress")
         display_progress()
         
+        # Compact user info
         if st.session_state.user_info["name"]:
-            st.success(f"👋 Hi {st.session_state.user_info['name']}!")
+            st.markdown(f"👋 **{st.session_state.user_info['name']}**")
             if st.session_state.user_info["company"]:
-                st.info(f"🏢 {st.session_state.user_info['company']}")
+                st.markdown(f"🏢 {st.session_state.user_info['company']}")
         
-        st.markdown("---")
-        st.subheader("🎯 Current Focus")
+        # Current focus - more compact
         current_q = get_current_question()
         if current_q:
-            st.write(f"**Topic:** {current_q['topic']}")
-            st.write(f"**Tier:** {current_q['tier']}")
+            st.markdown("---")
+            st.markdown("### 🎯 Current")
+            st.markdown(f"**{current_q['topic']}** (Tier {current_q['tier']})")
         
         # Always show guidance section when questionnaire is active
         if st.session_state.started and current_q:
-            # Add contextual help hints
-            st.markdown("---")
-            st.subheader("💡 Answer Guidance")
-            
-            # Topic-specific guidance
-            topic_tips = {
-                "Basic Information": "Be specific about the types of situations and provide concrete details about personnel needs.",
-                "Contact Process": "Explain who you call first and why - the reasoning helps configure the system properly.",
-                "List Management": "Describe how lists are organized and managed (seniority, overtime, geography, etc.).",
-                "Insufficient Staffing": "Detail your backup procedures and contingency plans for critical situations.",
-                "Additional Rules": "Include timing restrictions, communication methods, exemptions, and any special policies."
-            }
-            
-            tip = topic_tips.get(current_q['topic'], "Be specific and explain the 'why' behind your processes.")
-            st.info(f"🎯 {tip}")
-            
-            # Show ONE question-specific example that syncs with current question
-            st.markdown("**💡 Example Answer:**")
+            # Compact example section
+            st.markdown("### 💡 Example")
             examples = get_question_examples(current_q['id'])
             if examples:
-                # Show only the first example, fully visible
+                # Show only the first example in a more compact format
                 current_example = examples[0]
-                st.markdown(f"*\"{current_example}\"*")
+                # Truncate if too long but show more than before
+                if len(current_example) > 200:
+                    display_example = current_example[:200] + "..."
+                else:
+                    display_example = current_example
+                st.markdown(f"*\"{display_example}\"*")
             
-            st.markdown("**Need help?** Just type 'example' or 'help' for more guidance!")
+            # Compact help text
+            st.markdown("💬 *Type 'example' for help*")
         
         st.markdown("---")
-        # Reset button
-        if st.button("🔄 Start Over"):
+        # Compact reset button
+        if st.button("🔄 Reset", help="Start questionnaire over"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -764,11 +831,10 @@ def main():
             """)
         
         with col2:
-            # Download summary
-            summary_text = generate_summary()
+            # Download summary - use real-time summary instead of generating
             st.download_button(
                 label="📥 Download Summary",
-                data=summary_text,
+                data=st.session_state.summary_text,
                 file_name=f"ACE_Summary_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.md",
                 mime="text/markdown"
             )
@@ -777,7 +843,7 @@ def main():
             if email_service.is_configured():
                 if st.button("📧 Send Email Notification", type="secondary"):
                     with st.spinner("Sending email..."):
-                        result = email_service.send_completion_notification(st.session_state.user_info, summary_text)
+                        result = email_service.send_completion_notification(st.session_state.user_info, st.session_state.summary_text)
                         if result["success"]:
                             st.success(f"✅ {result['message']}")
                         else:
@@ -787,7 +853,7 @@ def main():
         
         # Show detailed responses
         if st.expander("📖 View All Responses", expanded=False):
-            st.markdown(summary_text)
+            st.markdown(st.session_state.summary_text)
             
     else:
         # Main conversation flow
@@ -807,14 +873,11 @@ def main():
                 
                 ---
                 
-                **📋 Privacy Notice**
+                **📋 Data Privacy Notice**
                 
-                ⚠️ **Do not include any personal identifying information (PII) or protected health information (PHI)** in your responses.
+                **IMPORTANT: Data Privacy Notice**
                 
-                - Use **company abbreviations** or generic names (e.g., "ABC Electric" instead of full legal names)  
-                - **Avoid** SSNs, addresses, phone numbers, or other sensitive data
-                
-                This questionnaire focuses on **processes and procedures**, not personal information.
+                Please DO NOT enter any Personal Identifying Information (PII) such as social security numbers, home addresses, personal phone numbers, or other sensitive personal data. Focus on business processes, job roles, and organizational procedures only.
                 
                 ---
                 
@@ -928,9 +991,12 @@ def main():
                                 # Store answer 
                                 st.session_state.answers[current_q["id"]] = user_input
                                 
-                                # Check if this was the last question
-                                if st.session_state.current_question >= len(ACE_QUESTIONS):
-                                    # We've completed all questions
+                                # Update real-time summary immediately
+                                update_realtime_summary(current_q["id"], user_input)
+                                
+                                # Check if this was the last question (question 23)
+                                if st.session_state.current_question == len(ACE_QUESTIONS):
+                                    # We just answered the final question - questionnaire is complete!
                                     st.session_state.completed = True
                                 else:
                                     # Smart question skipping based on previous answers
