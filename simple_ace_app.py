@@ -29,29 +29,31 @@ ACE_QUESTIONS = [
     {"id": 4, "text": "Thinking of the first person to be contacted, how many devices are used to try and reach them (e.g., work phone, personal cell)?", "topic": "Contact Process", "tier": 1},
     {"id": 5, "text": "Are those devices contacted one by one in a specific order, or all at the same time? If in order, what is it and why is it done that way?", "topic": "Contact Process", "tier": 1},
     {"id": 6, "text": "What types of devices are primarily used? (e.g., cell phones, landlines, radios, etc.)", "topic": "Contact Process", "tier": 1},
+    {"id": 7, "text": "When contacting an employee who has multiple devices, can the system call all their devices simultaneously, or must they be called one at a time?", "topic": "Contact Process", "tier": 1},
     
     # Section 3: Callout List Management
-    {"id": 7, "text": "After the first employee, is the next person called from the same list or a different one?", "topic": "List Management", "tier": 1},
-    {"id": 8, "text": "In total, how many different lists or groups are used to fully staff this callout?", "topic": "List Management", "tier": 1},
-    {"id": 9, "text": "Are the lists organized by job classification (e.g., 'Linemen,' 'Supervisors')? If not, what other attribute determines the order (e.g., overtime hours, seniority, special qualifications)?", "topic": "List Management", "tier": 1},
-    {"id": 10, "text": "When going through a list, do you follow a strict top-to-bottom order, or are people ever skipped?", "topic": "List Management", "tier": 1},
-    {"id": 11, "text": "If employees are skipped, what are the reasons? (e.g., based on qualifications, status like vacation/sick, etc.)", "topic": "List Management", "tier": 1},
-    {"id": 12, "text": "Are there any planned pauses between call attempts within the same list?", "topic": "List Management", "tier": 1},
+    {"id": 8, "text": "After the first employee, is the next person called from the same list or a different one?", "topic": "List Management", "tier": 1},
+    {"id": 9, "text": "In total, how many different lists or groups are used to fully staff this callout?", "topic": "List Management", "tier": 1},
+    {"id": 10, "text": "Are the lists organized by job classification (e.g., 'Linemen,' 'Supervisors')? If not, what other attribute determines the order (e.g., overtime hours, seniority, special qualifications)?", "topic": "List Management", "tier": 1},
+    {"id": 11, "text": "When going through a list, do you follow a strict top-to-bottom order, or are people ever skipped?", "topic": "List Management", "tier": 1},
+    {"id": 12, "text": "If employees are skipped, what are the reasons? (e.g., based on qualifications, status like vacation/sick, etc.)", "topic": "List Management", "tier": 1},
+    {"id": 13, "text": "Are there any planned pauses between call attempts within the same list?", "topic": "List Management", "tier": 1},
+    {"id": 14, "text": "When the system needs to contact multiple employees from a list, can it call them simultaneously, or must each person be called individually in sequence?", "topic": "List Management", "tier": 1},
     
     # Section 4: Handling Insufficient Staffing
-    {"id": 13, "text": "If you don't get the required number of people from the primary list, what is the next step?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 14, "text": "Is the primary list called a second time before moving on to other options?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 15, "text": "In critical situations, is the position ever offered to employees who would not normally be called?", "topic": "Insufficient Staffing", "tier": 1},
-    {"id": 16, "text": "Is this procedure for when staffing is insufficient always the same, or does it vary depending on the situation (e.g., major emergency vs. routine)?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 15, "text": "If you don't get the required number of people from the primary list, what is the next step?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 16, "text": "Is the primary list called a second time before moving on to other options?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 17, "text": "In critical situations, is the position ever offered to employees who would not normally be called?", "topic": "Insufficient Staffing", "tier": 1},
+    {"id": 18, "text": "Is this procedure for when staffing is insufficient always the same, or does it vary depending on the situation (e.g., major emergency vs. routine)?", "topic": "Insufficient Staffing", "tier": 1},
     
     # Section 5: Additional Rules and Logistics
-    {"id": 17, "text": "Is it possible for an employee to decline the callout but ask to be contacted again if no one else accepts? How is that situation managed?", "topic": "Additional Rules", "tier": 1},
-    {"id": 18, "text": "If an employee says no on the first pass through the list, are they contacted again on a second pass?", "topic": "Additional Rules", "tier": 1},
-    {"id": 19, "text": "Does the order or content of the lists ever change over time? If so, how often and what triggers it (e.g., new hires, changes in qualifications, balancing of overtime)?", "topic": "Additional Rules", "tier": 2},
-    {"id": 20, "text": "If the list order is based on overtime, what criteria are used as a tie-breaker if two employees have the same hours (e.g., seniority, hire date)?", "topic": "Additional Rules", "tier": 2},
-    {"id": 21, "text": "Besides calls, are other methods like emails or text messages used to provide information about the callout?", "topic": "Additional Rules", "tier": 2},
-    {"id": 22, "text": "Are there any rules that prevent calling someone right before or after their normal shift?", "topic": "Additional Rules", "tier": 2},
-    {"id": 23, "text": "Finally, are there any rules that would excuse an employee for declining a callout without it counting against them (e.g., if it's near their vacation, a scheduled shift, etc.)?", "topic": "Additional Rules", "tier": 2},
+    {"id": 19, "text": "Is it possible for an employee to decline the callout but ask to be contacted again if no one else accepts? How is that situation managed?", "topic": "Additional Rules", "tier": 1},
+    {"id": 20, "text": "If an employee says no on the first pass through the list, are they contacted again on a second pass?", "topic": "Additional Rules", "tier": 1},
+    {"id": 21, "text": "Does the order or content of the lists ever change over time? If so, how often and what triggers it (e.g., new hires, changes in qualifications, balancing of overtime)?", "topic": "Additional Rules", "tier": 2},
+    {"id": 22, "text": "If the list order is based on overtime, what criteria are used as a tie-breaker if two employees have the same hours (e.g., seniority, hire date)?", "topic": "Additional Rules", "tier": 2},
+    {"id": 23, "text": "Besides calls, are other methods like emails or text messages used to provide information about the callout?", "topic": "Additional Rules", "tier": 2},
+    {"id": 24, "text": "Are there any rules that prevent calling someone right before or after their normal shift?", "topic": "Additional Rules", "tier": 2},
+    {"id": 25, "text": "Finally, are there any rules that would excuse an employee for declining a callout without it counting against them (e.g., if it's near their vacation, a scheduled shift, etc.)?", "topic": "Additional Rules", "tier": 2},
 ]
 
 class SimpleAIService:
@@ -369,87 +371,97 @@ def get_question_examples(question_id):
             "We use a combination of two-way radios for field communication and cell phones for initial contact. Radios work better in remote areas where cell coverage is spotty.",
             "Company-issued smartphones with our emergency response app installed. The app shows incident details, maps, and allows crews to update their status in real-time."
         ],
-        7: [  # After the first employee, is the next person called from the same list?
+        7: [  # When contacting an employee who has multiple devices, can the system call all their devices simultaneously?
+            "Our system can call all devices at once - work phone, personal cell, and radio - so we reach them as quickly as possible during emergencies.",
+            "We have to call devices one at a time because our phone system doesn't support simultaneous dialing. We start with work phone, then personal cell after 30 seconds.",
+            "The system can do simultaneous calling, but our policy is to call devices sequentially to avoid overwhelming the employee with multiple calls at once."
+        ],
+        8: [  # After the first employee, is the next person called from the same list?
             "Same list - we continue down our supervisor list in order based on overtime hours until we get the required number of people.",
             "Different list - once we have a supervisor, we move to our technician list to get the field workers needed for the job.",
             "We stay on the same list until it's exhausted, then move to our backup list from the neighboring district."
         ],
-        8: [  # How many different lists or groups are used?
+        9: [  # How many different lists or groups are used?
             "We use three main lists: supervisors, journeyman technicians, and apprentices. Each has different qualifications and we need specific combinations depending on the job type.",
             "Two lists total: our primary crew list with full-time employees, and our backup contractor list that we use when the primary crew is unavailable or we need additional resources.",
             "Four different lists: operations supervisors, field technicians, equipment operators, and our approved contractor vendors. Complex jobs might require people from multiple lists."
         ],
-        9: [  # Are the lists organized by job classification or other attribute?
+        10: [  # Are the lists organized by job classification or other attribute?
             "Lists are organized by job classification first - supervisors, journeymen, apprentices - then within each classification they're ordered by overtime hours worked, with lowest hours called first.",
             "We organize primarily by overtime balance. Everyone's hours are tracked and updated weekly, so the person with the fewest overtime hours gets called first regardless of their specific job title.",
             "Geographic location is our main organizing principle. We have separate lists for each service territory, and we call the closest available crew to minimize response time."
         ],
-        10: [  # Do you follow strict top-to-bottom order or skip around?
+        11: [  # Do you follow strict top-to-bottom order or skip around?
             "Strict top-to-bottom order based on overtime hours. This ensures fair distribution of overtime opportunities and everyone knows exactly where they stand on the list.",
             "We skip people who are on vacation, sick leave, or have other approved time off. Our dispatcher maintains a daily availability list to know who to skip.",
             "Generally top-to-bottom, but we'll skip someone if they don't have the required certifications for that specific type of work. For example, not everyone is qualified for high-voltage repairs."
         ],
-        11: [  # If employees are skipped, what are the reasons?
+        12: [  # If employees are skipped, what are the reasons?
             "We skip employees who are on approved vacation time, sick leave, or have submitted time-off requests that were already approved by their supervisor.",
             "Main reasons for skipping: they lack the required certification for the specific work, they're currently assigned to another emergency call, or they're outside our response area.",
             "We skip people who are too far from the incident location - if someone is more than 45 minutes away and we have closer options, we'll call the closer crew first."
         ],
-        12: [  # Are there any planned pauses between call attempts?
+        13: [  # Are there any planned pauses between call attempts?
             "Yes, we wait 2 minutes between each person to give them adequate time to answer. People might be in the shower, driving, or need a moment to check their availability.",
             "No planned pauses - we call continuously down the list until someone answers. In emergency situations, speed is more important than convenience.",
             "We pause for 5 minutes after every 3rd call to reassess the situation and make sure we're still calling the right type of personnel for what's actually needed."
         ],
-        13: [  # If you don't get required number from primary list, what's next?
+        14: [  # When the system needs to contact multiple employees from a list, can it call them simultaneously?
+            "Our system can call multiple people at the same time, which speeds up the process significantly when we need several crew members for a large job.",
+            "No, we have to call each person individually and wait for their response before calling the next one. Our phone system doesn't support multiple simultaneous calls.",
+            "The system supports simultaneous calling, but we typically call one at a time to avoid confusion about who's actually responding and coming in."
+        ],
+        15: [  # If you don't get required number from primary list, what's next?
             "We contact our mutual aid partners in the neighboring utility district. We have formal agreements to help each other during emergencies and they usually have crews available.",
             "Our next step is calling approved contractors from our vendor list. These are pre-qualified companies that meet our safety standards and know our systems.",
             "We escalate to our emergency management coordinator who can authorize calling in off-duty employees on overtime or request assistance from other departments."
         ],
-        14: [  # Is primary list called second time before other options?
+        16: [  # Is primary list called second time before other options?
             "Yes, we go through our primary list twice before moving to contractors. Sometimes people's situations change or they didn't hear the first call.",
             "No, we immediately move to our backup district crew. If our primary people aren't available, we need to get resources mobilized quickly rather than waste time on repeat calls.",
             "Only during critical emergencies like major storms. For routine callouts, we use contractors if the first pass through our list doesn't get enough people."
         ],
-        15: [  # In critical situations, offer to employees not normally called?
+        17: [  # In critical situations, offer to employees not normally called?
             "During major storms, we'll contact recently retired employees who still maintain their certifications and are willing to help during emergencies. They know our systems and can be very valuable.",
             "Yes, we'll ask office staff to help with non-technical support roles like coordinating with customers, managing logistics, or handling paperwork so field crews can focus on repairs.",
             "We'll call in off-duty employees from other shifts and offer overtime pay. During major outages, we need all hands on deck and most people are willing to help."
         ],
-        16: [  # Is insufficient staffing procedure always the same or varies?
+        18: [  # Is insufficient staffing procedure always the same or varies?
             "Same procedure every time - consistency is important so everyone knows what to expect. We always follow the same escalation process regardless of the situation type.",
             "It varies by emergency type. Storm responses get different treatment than routine repairs - we'll mobilize contractors faster and call in more resources for weather-related emergencies.",
             "Different procedures for weekends versus weekdays because contractor availability changes and our mutual aid agreements have different response times on weekends."
         ],
-        17: [  # Can employee decline but ask to be contacted again?
+        19: [  # Can employee decline but ask to be contacted again?
             "Yes, they can say 'call me back if no one else accepts the callout.' This usually happens when they have a family commitment but could rearrange things if we really need them.",
             "No, once someone declines a callout, they're marked unavailable for that specific incident. We don't want to put pressure on people or create confusion about who's actually coming in.",
             "Only for non-emergency situations. During routine maintenance callouts, people can ask to be called back, but for emergency responses we need definitive yes or no answers."
         ],
-        18: [  # If someone says no on first pass, contacted on second pass?
+        20: [  # If someone says no on first pass, contacted on second pass?
             "No, if they declined on the first pass, we respect that decision and don't call them again for that same incident. It would be unfair to pressure people who already said no.",
             "Yes, we do call them again on the second pass because their circumstances might have changed, or they might reconsider if they know we're really short-staffed.",
             "We only call them again if absolutely no one else accepted and it's a critical emergency. In that case, we explain the situation has escalated and ask if they can help."
         ],
-        19: [  # Does order/content of lists change over time?
+        21: [  # Does order/content of lists change over time?
             "We update the lists monthly based on overtime hours worked. As people accumulate overtime, they move down the list so the burden gets distributed fairly among all employees.",
             "Lists are updated immediately whenever we have new hires, retirements, or people change positions. Our HR department notifies operations within 24 hours of any personnel changes.",
             "Quarterly rebalancing to make sure callout frequency is distributed evenly. We track how often each person gets called and adjust the order to ensure fairness."
         ],
-        20: [  # What criteria for tie-breaker if same overtime hours?
+        22: [  # What criteria for tie-breaker if same overtime hours?
             "Seniority is our first tie-breaker - the person who's been with the company longer gets called first when overtime hours are equal.",
             "We use hire date as the tie-breaker, but in reverse - the most recently hired person gets called first. This helps newer employees get overtime opportunities to supplement their income.",
             "Alphabetical order by last name. It's simple, fair, and removes any appearance of favoritism when people have identical overtime hours."
         ],
-        21: [  # Other methods like emails or text messages?
+        23: [  # Other methods like emails or text messages?
             "We send text messages after making successful phone contact to provide incident details, location information, and estimated duration. The text serves as a written record of the assignment.",
             "Email notifications go to supervisors and management to keep them informed about callout status and crew assignments, but we don't use email for the actual callouts since it's not immediate enough.",
             "No, we only use phone calls for the actual callouts. Text and email aren't reliable enough for emergency situations where immediate response is critical."
         ],
-        22: [  # Rules preventing calls before/after normal shift?
+        24: [  # Rules preventing calls before/after normal shift?
             "We avoid calling anyone within 2 hours of their scheduled shift start or end time. This gives people time to rest between shifts and ensures they're alert when they come to work.",
             "No restrictions - emergencies don't follow normal business hours. If we need someone, we call them regardless of when their shift starts or ends.",
             "We try to avoid calls 1 hour before scheduled shifts when possible, but during major emergencies those rules get suspended and we call whoever we need."
         ],
-        23: [  # Rules that excuse declined callouts?
+        25: [  # Rules that excuse declined callouts?
             "Vacation requests that were approved in advance automatically excuse someone from declining a callout. We also excuse people for medical appointments or documented family emergencies.",
             "If someone worked within the past 8 hours, they can decline without it counting against them. We want people to be rested and safe.",
             "No formal excuses - being available for callouts is part of the job expectations. However, supervisors use discretion for legitimate personal emergencies."
