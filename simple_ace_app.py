@@ -155,52 +155,44 @@ Required AWS IAM Policy:
         
         if is_last_question:
             # Special handling for the final question
-            system_prompt = f"""You are ACE, an ARCOS questionnaire assistant. This is the FINAL question.
+            system_prompt = f"""You are ACE. This is the FINAL question of a SCRIPTED questionnaire.
 
 USER: {user_name} from {company_name} ({utility_type})
-
-🚨 CRITICAL: MAINTAIN CONSISTENCY  
-If the user says "we don't have that implemented yet" about automation/systems, clarify: "I understand you may not have an automated system yet. I'm asking about your current manual process - whether you use Excel spreadsheets, printed lists, or other manual methods for callouts. **{current_question_info['text']}**"
 
 🚨 FINAL QUESTION RULES:
 1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
-2. After they answer, say "Thank you! That completes our questionnaire." and STOP
-3. DO NOT ask any additional questions
-4. Keep responses to 1-2 sentences maximum
+2. You CANNOT ask any other questions or make up new questions
+3. After they answer, say "Thank you! That completes our questionnaire." and STOP
+4. You MUST follow the exact response pattern below
+
+MANDATORY RESPONSE PATTERN:
+- Brief acknowledgment (1-3 words): "Got it!" OR "Thanks!" OR "Perfect."
+- Ask ONLY this question in bold: **{current_question_info['text']}**
+- STOP immediately - NO additional text
 
 FINAL QUESTION TO ASK: **{current_question_info['text']}**
 
-RESPONSE PATTERN:
-- Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
-- Ask ONLY the exact question above in bold
-- STOP immediately
-
-After their final answer, say: "Thank you! That completes our questionnaire."
-
-EXAMPLE (only if user requests): {get_question_examples(current_question_info['id'])[0]}
-
-You are completing a SCRIPTED questionnaire. This is the LAST question."""
+This is question {current_question_info['id']} of {len(ACE_QUESTIONS)} (FINAL). You are following a STRICT script."""
         else:
             # AI should ask the current question we're tracking
-            system_prompt = f"""You are ACE, conducting an ARCOS questionnaire.
+            system_prompt = f"""You are ACE, conducting a SCRIPTED ARCOS questionnaire.
 
 USER: {user_name} from {company_name} ({utility_type})
 
-CURRENT QUESTION TO ASK: **{current_question_info['text']}**
+🚨 CRITICAL RULES:
+1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
+2. You CANNOT ask any other questions or make up new questions
+3. You MUST follow the exact response pattern below
+4. You MUST stop immediately after asking the question
 
-🚨 CRITICAL: MAINTAIN CONSISTENCY
-If the user says "we don't have that implemented yet" about automation/systems, clarify: "I understand you may not have an automated system yet. I'm asking about your current manual process - whether you use Excel spreadsheets, printed lists, or other manual methods for callouts. **{current_question_info['text']}**"
+MANDATORY RESPONSE PATTERN:
+- Brief acknowledgment (1-3 words): "Got it!" OR "Thanks!" OR "Perfect."
+- Ask ONLY this question in bold: **{current_question_info['text']}**
+- STOP immediately - NO additional text
 
-IMPORTANT: ALL utilities have callout processes (manual or automated). Focus on HOW they currently do it.
+QUESTION TO ASK: **{current_question_info['text']}**
 
-YOUR RESPONSE PATTERN:
-1. Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
-2. Ask the question above in bold: **{current_question_info['text']}**  
-3. STOP immediately
-
-ONLY provide examples if user types "example" or "help": {get_question_examples(current_question_info['id'])[0]}
-
-You are asking question {current_question_info['id']} of {len(ACE_QUESTIONS)}."""
+This is question {current_question_info['id']} of {len(ACE_QUESTIONS)}. You are following a STRICT script."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -214,7 +206,7 @@ You are asking question {current_question_info['id']} of {len(ACE_QUESTIONS)}.""
             body = {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 150,  # Keep responses very short like original ACEBot
-                "temperature": 0.7,
+                "temperature": 0.3,  # Lower temperature for more predictable responses
                 "system": system_prompt,
                 "messages": messages
             }
