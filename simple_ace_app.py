@@ -27,7 +27,7 @@ ACE_QUESTIONS = [
     # Section 2: Initial Contact Process
     {"id": 3, "text": "Who is contacted first, and what is the main reason for that person or role being the first?", "topic": "Contact Process", "tier": 1},
     {"id": 4, "text": "Thinking of the first person to be contacted, how many devices are used to try and reach them (e.g., work phone, personal cell)?", "topic": "Contact Process", "tier": 1},
-    {"id": 5, "text": "Are those devices contacted one by one in a specific order, or all at the same time? If in order, what is it and why is it done that way?", "topic": "Contact Process", "tier": 1},
+    {"id": 5, "text": "Are those devices contacted one by one in a specific order, or all at the same time? If in order, what is it and why is it done that way? Also, when you need to contact multiple employees from a list, do you call them simultaneously, or must each person be called individually in sequence?", "topic": "Contact Process", "tier": 1},
     {"id": 6, "text": "What types of devices are primarily used? (e.g., cell phones, landlines, radios, etc.)", "topic": "Contact Process", "tier": 1},
     
     # Section 3: Callout List Management
@@ -177,20 +177,24 @@ EXAMPLE (only if user requests): {get_question_examples(current_question_info['i
 You are completing a SCRIPTED questionnaire. This is the LAST question."""
         else:
             # AI should ask the current question we're tracking
-            system_prompt = f"""You are ACE, conducting an ARCOS questionnaire.
+            system_prompt = f"""You are ACE conducting a SCRIPTED ARCOS questionnaire.
 
 USER: {user_name} from {company_name} ({utility_type})
 
-CURRENT QUESTION TO ASK: **{current_question_info['text']}**
+🚨 STRICT RULES:
+1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
+2. You CANNOT ask any other questions or make up questions
+3. You CANNOT repeat questions that were already asked
+4. You MUST follow the exact pattern below
 
-YOUR RESPONSE PATTERN:
-1. Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
-2. Ask the question above in bold: **{current_question_info['text']}**  
-3. STOP immediately
+RESPONSE PATTERN:
+- Brief acknowledgment: "Got it!" OR "Thanks!" OR "Perfect."
+- Ask ONLY this question: **{current_question_info['text']}**
+- STOP immediately
 
-ONLY provide examples if user types "example" or "help": {get_question_examples(current_question_info['id'])[0]}
+QUESTION TO ASK: **{current_question_info['text']}**
 
-You are asking question {current_question_info['id']} of {len(ACE_QUESTIONS)}."""
+This is question {current_question_info['id']} of {len(ACE_QUESTIONS)}. You are following a SCRIPTED questionnaire."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -359,10 +363,10 @@ def get_question_examples(question_id):
             "Three devices: we start with their office phone, then try their mobile phone, and finally use the two-way radio system if they're already in the field.",
             "Just one primary device - their assigned work cell phone. Everyone is required to keep it on and charged during their on-call periods."
         ],
-        5: [  # Are those devices contacted one by one or all at the same time?
-            "We contact them sequentially - work phone first, wait 2 minutes for a response, then try their personal cell. This gives them time to answer before we move to the next device.",
-            "We call both their work phone and personal cell simultaneously because emergency situations require the fastest possible response time.",
-            "One by one in order: office phone first, then mobile after 30 seconds if no answer. We don't want to overwhelm them with multiple calls at once."
+        5: [  # Are those devices contacted one by one or all at the same time? + simultaneous calling
+            "We contact devices sequentially - work phone first, wait 2 minutes, then personal cell. For multiple employees, we have multiple dispatchers so we can call several people at once which speeds up the process.",
+            "We call both work phone and personal cell at the same time because emergencies require fast response. When contacting multiple employees, we also call them simultaneously using multiple phone lines.",
+            "One by one in order: office phone first, then mobile after 30 seconds. For multiple employees, we call each person individually because we only have one dispatcher making the calls."
         ],
         6: [  # What types of devices are primarily used?
             "Primarily cell phones because our crews need to be mobile and reachable whether they're at home, in the field, or traveling between job sites.",
@@ -612,6 +616,61 @@ def find_next_relevant_question(start_question_num, answers):
     # Smart skipping was causing important questions to be missed
     return start_question_num
 
+def export_session_data():
+    """Export current session state to JSON for save/resume functionality"""
+    try:
+        session_data = {
+            "user_info": dict(st.session_state.user_info),
+            "answers": dict(st.session_state.answers),
+            "current_question": st.session_state.current_question,
+            "conversation": [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.conversation],
+            "summary_text": st.session_state.summary_text,
+            "completed": st.session_state.completed,
+            "started": st.session_state.started,
+            "export_timestamp": datetime.now().isoformat(),
+            "app_version": "simple_ace_v1.0"
+        }
+        
+        return json.dumps(session_data, indent=2)
+        
+    except Exception as e:
+        st.error(f"Error exporting session data: {e}")
+        return None
+
+def import_session_data(json_data):
+    """Import session state from JSON data"""
+    try:
+        data = json.loads(json_data)
+        
+        # Validate required fields
+        required_fields = ["user_info", "answers", "current_question", "started"]
+        if not all(field in data for field in required_fields):
+            st.error("Invalid session file - missing required fields")
+            return False
+        
+        # Restore session state
+        st.session_state.user_info = data.get("user_info", {})
+        
+        # Convert answer keys back to integers
+        answers_data = data.get("answers", {})
+        st.session_state.answers = {int(k): v for k, v in answers_data.items()}
+        
+        st.session_state.current_question = data.get("current_question", 1)
+        st.session_state.conversation = data.get("conversation", [])
+        st.session_state.summary_text = data.get("summary_text", "")
+        st.session_state.completed = data.get("completed", False)
+        st.session_state.started = data.get("started", True)
+        
+        st.success("✅ Session restored successfully!")
+        return True
+        
+    except json.JSONDecodeError:
+        st.error("Invalid JSON format in session file")
+        return False
+    except Exception as e:
+        st.error(f"Error importing session data: {e}")
+        return False
+
 def generate_summary():
     """Generate a clean summary of all answers"""
     if not st.session_state.answers:
@@ -755,6 +814,35 @@ def main():
             
             # Compact help text
             st.markdown("💬 *Type 'example' for help*")
+        
+        st.markdown("---")
+        
+        # Save/Resume functionality  
+        if st.session_state.started:
+            st.markdown("### 💾 Save Progress")
+            
+            # Save progress
+            if st.button("📥 Save Progress"):
+                session_json = export_session_data()
+                if session_json:
+                    st.download_button(
+                        label="📥 Download Session File",
+                        data=session_json,
+                        file_name=f"ACE_Session_{st.session_state.user_info.get('company', 'Session')}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        help="Save your progress and resume later"
+                    )
+        
+        # Resume progress (always available)
+        st.markdown("### 📂 Resume Progress")
+        uploaded_file = st.file_uploader("Upload saved session", type=['json'], help="Resume from a previously saved session")
+        if uploaded_file is not None:
+            try:
+                json_data = uploaded_file.read().decode('utf-8')
+                if import_session_data(json_data):
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error reading session file: {e}")
         
         st.markdown("---")
         # Compact reset button
