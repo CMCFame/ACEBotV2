@@ -176,34 +176,21 @@ EXAMPLE (only if user requests): {get_question_examples(current_question_info['i
 
 You are completing a SCRIPTED questionnaire. This is the LAST question."""
         else:
-            # Get the next question to ask after user answers current one
-            next_question_id = current_question_info['id'] + 1
-            next_question_text = ""
-            if next_question_id <= len(ACE_QUESTIONS):
-                next_question_text = ACE_QUESTIONS[next_question_id - 1]['text']
-            
-            # Simple system prompt that tells AI exactly what to do
-            if next_question_text:
-                system_prompt = f"""You are ACE, conducting an ARCOS questionnaire.
+            # AI should ask the current question we're tracking
+            system_prompt = f"""You are ACE, conducting an ARCOS questionnaire.
 
 USER: {user_name} from {company_name} ({utility_type})
 
-CURRENT SITUATION: User is answering question {current_question_info['id']}: "{current_question_info['text']}"
+CURRENT QUESTION TO ASK: **{current_question_info['text']}**
 
 YOUR RESPONSE PATTERN:
 1. Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
-2. Ask the NEXT question: **{next_question_text}**
+2. Ask the question above in bold: **{current_question_info['text']}**  
 3. STOP immediately
 
 ONLY provide examples if user types "example" or "help": {get_question_examples(current_question_info['id'])[0]}
 
-Ask question {next_question_id} next."""
-            else:
-                system_prompt = f"""You are ACE. The questionnaire is complete.
-
-USER: {user_name} from {company_name} ({utility_type})
-
-The user just answered the final question. Say: "Thank you! That completes our questionnaire." and STOP."""
+You are asking question {current_question_info['id']} of {len(ACE_QUESTIONS)}."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -504,24 +491,24 @@ def infer_utility_type(company_name):
     return "utility organization"
 
 def display_progress():
-    """Beautiful, encouraging progress display"""
-    current = st.session_state.current_question
+    """Compact progress display with accurate counts"""
     total = len(ACE_QUESTIONS)
-    progress = min((current - 1) / total, 1.0)  # -1 because we show progress after completing questions
+    completed = len(st.session_state.answers)
     
-    # Progress bar styling is now in main CSS
+    # Progress based on completed answers, not current question
+    progress = min(completed / total, 1.0)
     
     st.progress(progress)
     
     # Get current tier info
     current_q = get_current_question()
-    tier_info = f"Tier {current_q['tier']}" if current_q else "Complete"
+    tier_info = f"T{current_q['tier']}" if current_q else "Done"
     
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Progress", f"{int(progress * 100)}%")
     with col2:
-        st.metric("Question", f"{current-1}/{total}")
+        st.metric("Question", f"{completed}/{total}")
     with col3:
         st.metric("Current", tier_info)
 
@@ -610,60 +597,20 @@ def update_realtime_summary(question_id, answer_text):
                 st.session_state.summary_text[next_topic_start:]
             )
     
-    # Update the questions completed count
+    # Update the questions completed count using regex to be more reliable
+    import re
     completed_count = len(st.session_state.answers)
-    st.session_state.summary_text = st.session_state.summary_text.replace(
-        f"**Questions Completed:** {completed_count-1}/{len(ACE_QUESTIONS)}",
-        f"**Questions Completed:** {completed_count}/{len(ACE_QUESTIONS)}"
+    st.session_state.summary_text = re.sub(
+        r"\*\*Questions Completed:\*\* \d+/\d+",
+        f"**Questions Completed:** {completed_count}/{len(ACE_QUESTIONS)}",
+        st.session_state.summary_text
     )
 
 def find_next_relevant_question(start_question_num, answers):
-    """Smart question skipping based on previous answers (like original ACEBot)"""
-    current_num = start_question_num
-    
-    # Skip questions based on previous answers to avoid redundancy
-    while current_num <= len(ACE_QUESTIONS):
-        current_q = ACE_QUESTIONS[current_num - 1]  # Convert to 0-indexed
-        
-        # Check if this question should be skipped based on previous answers
-        should_skip = False
-        
-        # Get all previous answers as text
-        all_previous_answers = " ".join(answers.values()).lower()
-        
-        # Question-specific skip logic (like original ACEBot)
-        if current_q["id"] == 6:  # "How many people do you typically call out?"
-            # Skip if already mentioned numbers in staffing questions
-            if any(word in all_previous_answers for word in ["2", "3", "4", "5", "crew", "team", "people", "employees"]):
-                should_skip = True
-                
-        elif current_q["id"] == 8:  # "Are your lists organized by job classification?"
-            # Skip if already mentioned job classes or roles
-            if any(word in all_previous_answers for word in ["supervisor", "foreman", "technician", "journeyman", "apprentice", "classification", "role", "job"]):
-                should_skip = True
-                
-        elif current_q["id"] == 11:  # "Do you use overtime ordering?"
-            # Skip if they clearly don't use overtime systems
-            if any(phrase in all_previous_answers for phrase in ["no overtime", "don't use overtime", "rotation", "rotating", "weekly", "standby"]):
-                should_skip = True
-                
-        elif current_q["id"] == 14:  # "Are there delays between calling different groups?"
-            # Skip if they mentioned single list or no multiple groups
-            if any(phrase in all_previous_answers for phrase in ["one list", "single list", "same list", "don't have multiple"]):
-                should_skip = True
-                
-        elif current_q["id"] == 17:  # "How do you handle list changes over time?"
-            # Skip if they already explained list management in detail
-            if any(word in all_previous_answers for word in ["update", "change", "quarterly", "monthly", "weekly", "automatic"]) and len(all_previous_answers) > 200:
-                should_skip = True
-                
-        # If we should skip, try next question
-        if should_skip:
-            current_num += 1
-        else:
-            break
-    
-    return current_num
+    """Return next question in sequence - disable smart skipping for now to ensure all 23 questions are asked"""
+    # For now, just return the next question in sequence to ensure all 23 questions are asked
+    # Smart skipping was causing important questions to be missed
+    return start_question_num
 
 def generate_summary():
     """Generate a clean summary of all answers"""
@@ -929,14 +876,35 @@ def main():
                 user_input = st.chat_input(f"💬 {current_q['text']}")
                 
                 if user_input:
-                    # Store current question info before it gets changed
-                    current_question_for_ai = current_q.copy()
-                    
                     # Add user message to conversation
                     st.session_state.conversation.append({"role": "user", "content": user_input})
                     
-                    # Get AI response using the stored question info
-                    ai_response = ai_service.get_response(st.session_state.conversation, current_question_for_ai)
+                    # Store the answer immediately and advance question BEFORE AI response
+                    if not is_help_request(user_input, current_q["id"]):
+                        # Store answer
+                        st.session_state.answers[current_q["id"]] = user_input
+                        update_realtime_summary(current_q["id"], user_input)
+                        
+                        # Advance to next question
+                        if st.session_state.current_question == len(ACE_QUESTIONS):
+                            # Just completed the final question
+                            st.session_state.completed = True
+                        else:
+                            # Move to next question
+                            next_question = find_next_relevant_question(st.session_state.current_question + 1, st.session_state.answers)
+                            if next_question > len(ACE_QUESTIONS):
+                                st.session_state.completed = True
+                            else:
+                                st.session_state.current_question = next_question
+                    
+                    # Now get the current question for AI response (either same question for help, or next question)
+                    current_question_for_ai = get_current_question()
+                    if not current_question_for_ai:
+                        # Questionnaire is complete
+                        ai_response = "Thank you! That completes our questionnaire."
+                    else:
+                        # Get AI response for current question
+                        ai_response = ai_service.get_response(st.session_state.conversation, current_question_for_ai)
                     
                     # Check if system is unavailable
                     if "❌ **System Unavailable**" in ai_response:
@@ -944,71 +912,8 @@ def main():
                         st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                         st.error("**System Unavailable** - Please resolve the AWS Bedrock access issue to continue.")
                     else:
-                        # System is working - proceed normally
-                        # Check if this is a help request
-                        if is_help_request(user_input, current_q["id"]):
-                            # Just add the AI response for help - don't advance question
-                            st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                        else:
-                            # Add AI response to conversation first
-                            st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                            
-                            # AGGRESSIVE ADVANCEMENT: Check if user provided substantive answer
-                            # Don't advance only for these specific cases:
-                            # 1. Very short responses that don't address the question
-                            # 2. Obvious requests for help/examples
-                            # 3. AI explicitly asking for clarification with question words
-                            
-                            user_input_lower = user_input.lower().strip()
-                            ai_response_lower = ai_response.lower()
-                            
-                            # Check if user gave a very short non-substantive response
-                            is_too_short = len(user_input.strip()) < 5
-                            
-                            # Check if AI is asking clarifying questions about the SAME topic (not next question)
-                            # Only consider it clarification if AI is asking for more details WITHOUT bold question
-                            has_bold_question = "**" in ai_response
-                            has_question_mark = "?" in ai_response
-                            has_clarification_words = any(word in ai_response_lower for word in ["could you elaborate", "can you provide more", "could you be more specific", "what do you mean", "can you clarify"])
-                            
-                            is_ai_asking_clarification = (
-                                has_question_mark and 
-                                has_clarification_words and
-                                not has_bold_question  # If there's a bold question, it's likely the next question
-                            )
-                            
-                            # Check if user is asking for help
-                            is_user_help_request = any(phrase in user_input_lower for phrase in ["example", "help", "?", "what do you mean", "clarify", "explain"])
-                            
-                            # ADVANCE UNLESS we shouldn't
-                            should_not_advance = (
-                                is_too_short or 
-                                is_ai_asking_clarification or 
-                                is_user_help_request
-                            )
-                            
-                            if not should_not_advance:
-                                # Store answer 
-                                st.session_state.answers[current_q["id"]] = user_input
-                                
-                                # Update real-time summary immediately
-                                update_realtime_summary(current_q["id"], user_input)
-                                
-                                # Check if this was the last question (question 23)
-                                if st.session_state.current_question == len(ACE_QUESTIONS):
-                                    # We just answered the final question - questionnaire is complete!
-                                    st.session_state.completed = True
-                                else:
-                                    # Smart question skipping based on previous answers
-                                    original_next_question = st.session_state.current_question + 1
-                                    next_question = find_next_relevant_question(original_next_question, st.session_state.answers)
-                                    
-                                    if next_question > len(ACE_QUESTIONS):
-                                        # Skipped to beyond the last question
-                                        st.session_state.completed = True
-                                    else:
-                                        st.session_state.current_question = next_question
-                            # If it's clarification or no next question found, don't advance (stay on current question)
+                        # System is working - just add AI response to conversation
+                        st.session_state.conversation.append({"role": "assistant", "content": ai_response})
                     
                     st.rerun()
 

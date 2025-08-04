@@ -33,3 +33,4 @@ previousver/requirements.txt
 previousver/utils/__init__.py
 previousver/utils/helpers.py
 nul
+__pycache__/simple_ace_app.cpython-313.pyc
