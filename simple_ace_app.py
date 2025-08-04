@@ -159,6 +159,9 @@ Required AWS IAM Policy:
 
 USER: {user_name} from {company_name} ({utility_type})
 
+🚨 CRITICAL: MAINTAIN CONSISTENCY  
+If the user says "we don't have that implemented yet" about automation/systems, clarify: "I understand you may not have an automated system yet. I'm asking about your current manual process - whether you use Excel spreadsheets, printed lists, or other manual methods for callouts. **{current_question_info['text']}**"
+
 🚨 FINAL QUESTION RULES:
 1. You can ONLY ask this EXACT question: **{current_question_info['text']}**
 2. After they answer, say "Thank you! That completes our questionnaire." and STOP
@@ -184,6 +187,11 @@ You are completing a SCRIPTED questionnaire. This is the LAST question."""
 USER: {user_name} from {company_name} ({utility_type})
 
 CURRENT QUESTION TO ASK: **{current_question_info['text']}**
+
+🚨 CRITICAL: MAINTAIN CONSISTENCY
+If the user says "we don't have that implemented yet" about automation/systems, clarify: "I understand you may not have an automated system yet. I'm asking about your current manual process - whether you use Excel spreadsheets, printed lists, or other manual methods for callouts. **{current_question_info['text']}**"
+
+IMPORTANT: ALL utilities have callout processes (manual or automated). Focus on HOW they currently do it.
 
 YOUR RESPONSE PATTERN:
 1. Brief acknowledgment: "Got it!" / "Thanks!" / "Perfect."
@@ -469,6 +477,7 @@ def get_question_examples(question_id):
     }
     
     return examples.get(question_id, ["Provide specific details about your current process"])
+
 
 def infer_utility_type(company_name):
     """Infer utility type from company name"""
