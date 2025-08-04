@@ -612,6 +612,64 @@ def find_next_relevant_question(start_question_num, answers):
     # Smart skipping was causing important questions to be missed
     return start_question_num
 
+def export_session_data():
+    """Export current session state to JSON for save/resume functionality"""
+    try:
+        session_data = {
+            "user_info": dict(st.session_state.user_info),
+            "answers": dict(st.session_state.answers),
+            "current_question": st.session_state.current_question,
+            "conversation": [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.conversation],
+            "summary_text": st.session_state.summary_text,
+            "completed": st.session_state.completed,
+            "started": st.session_state.started,
+            "export_timestamp": datetime.now().isoformat(),
+            "app_version": "simple_ace_v1.0"
+        }
+        
+        # Test JSON serialization
+        json.dumps(session_data)
+        return session_data
+        
+    except Exception as e:
+        st.error(f"Error creating session data: {e}")
+        return None
+
+def import_session_data(data):
+    """Import session state from JSON file"""
+    try:
+        # Validate required fields
+        required_fields = ["user_info", "answers", "current_question", "started"]
+        for field in required_fields:
+            if field not in data:
+                st.error(f"Invalid save file: missing {field}")
+                return False
+        
+        # Restore session state
+        st.session_state.user_info = data.get("user_info", {})
+        
+        # Convert answer keys back to integers (JSON converts int keys to strings)
+        answers_data = data.get("answers", {})
+        st.session_state.answers = {int(k): v for k, v in answers_data.items()}
+        
+        st.session_state.current_question = data.get("current_question", 1)
+        st.session_state.conversation = data.get("conversation", [])
+        st.session_state.summary_text = data.get("summary_text", "")
+        st.session_state.completed = data.get("completed", False)
+        st.session_state.started = data.get("started", False)
+        
+        # Validate current question is within bounds
+        if st.session_state.current_question > len(ACE_QUESTIONS):
+            st.session_state.current_question = len(ACE_QUESTIONS)
+        elif st.session_state.current_question < 1:
+            st.session_state.current_question = 1
+            
+        return True
+        
+    except Exception as e:
+        st.error(f"Error restoring session: {e}")
+        return False
+
 def generate_summary():
     """Generate a clean summary of all answers"""
     if not st.session_state.answers:
@@ -757,6 +815,55 @@ def main():
             st.markdown("💬 *Type 'example' for help*")
         
         st.markdown("---")
+        
+        # Save/Resume functionality
+        if st.session_state.started and not st.session_state.completed:
+            st.markdown("### 💾 Save Progress")
+            
+            if st.button("💾 Save Progress", help="Download your progress as a file"):
+                session_data = export_session_data()
+                if session_data:
+                    import json
+                    json_data = json.dumps(session_data, indent=2)
+                    
+                    # Create download button
+                    st.download_button(
+                        label="📥 Download Progress File",
+                        data=json_data,
+                        file_name=f"ACE_Progress_{st.session_state.user_info.get('company', 'User')}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        help="Save this file to resume your questionnaire later"
+                    )
+                    st.success("✅ Progress saved! Use this file to resume later.")
+        
+        # Resume functionality (only show if not started or completed)
+        if not st.session_state.started or st.session_state.completed:
+            st.markdown("### 📤 Resume Progress")
+            
+            uploaded_file = st.file_uploader(
+                "Resume from saved file",
+                type=["json"],
+                help="Upload a previously saved progress file to continue where you left off"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    content = uploaded_file.read()
+                    import json
+                    data = json.loads(content)
+                    
+                    if import_session_data(data):
+                        st.success("✅ Progress restored successfully!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to restore progress. Please check your file.")
+                        
+                except json.JSONDecodeError:
+                    st.error("❌ Invalid file format. Please upload a valid ACE progress file.")
+                except Exception as e:
+                    st.error(f"❌ Error loading file: {e}")
+        
+        st.markdown("---")
         # Compact reset button
         if st.button("🔄 Reset", help="Start questionnaire over"):
             for key in list(st.session_state.keys()):
@@ -817,6 +924,7 @@ def main():
                 - I'll ask you questions about how you currently handle callouts
                 - Feel free to ask for examples if anything is unclear  
                 - We'll go through this step-by-step at your pace
+                - **💾 Save your progress anytime** and resume later from any device
                 
                 ---
                 
