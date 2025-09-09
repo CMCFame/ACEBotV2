@@ -14,6 +14,21 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from datetime import datetime
 
+# Load environment variables from .env file
+def load_env_file():
+    """Load environment variables from .env file if it exists"""
+    env_path = '.env'
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip()
+
+# Load .env file at startup
+load_env_file()
+
 # Configuration
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 BEDROCK_AWS_REGION = "us-east-1"
@@ -174,27 +189,33 @@ Got it!
 
 This is the FINAL question ({current_question_info['id']} of {len(ACE_QUESTIONS)}). After they answer, say "Thank you! That completes our questionnaire."""
         else:
-            # AI should ask the current question we're tracking
-            system_prompt = f"""You are ACE. You MUST follow this EXACT script.
+            # AI should ask the current question we're tracking, but check conversation context
+            # Get the last few messages to provide context
+            recent_messages = conversation_history[-4:] if len(conversation_history) > 4 else conversation_history
+            recent_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in recent_messages])
+            
+            system_prompt = f"""You are ACE, a questionnaire assistant. Look at the recent conversation to avoid repeating questions.
 
 USER: {user_name} from {company_name} ({utility_type})
+CURRENT QUESTION: {current_question_info['text']} (Question {current_question_info['id']} of {len(ACE_QUESTIONS)})
 
-🚨 CRITICAL: You can ONLY respond with this EXACT format:
+RECENT CONVERSATION:
+{recent_context}
 
-[ACKNOWLEDGMENT]
+INSTRUCTIONS:
+1. If the user already gave a substantive answer to the current question in recent messages:
+   - Acknowledge their previous answer briefly
+   - Say something like "Thank you for that information" and move forward
+   
+2. If the user expressed frustration about repeating themselves:
+   - Apologize: "I apologize - I see you already addressed this."
+   - Acknowledge their answer and proceed
+   
+3. If this question hasn't been clearly answered yet:
+   - Give brief acknowledgment: "Got it!" OR "Thanks!" OR "Perfect."
+   - Ask the question in bold: **{current_question_info['text']}**
 
-**[QUESTION]**
-
-Where:
-- ACKNOWLEDGMENT = "Got it!" OR "Thanks!" OR "Perfect."
-- QUESTION = {current_question_info['text']}
-
-EXAMPLE RESPONSE:
-Got it!
-
-**{current_question_info['text']}**
-
-You are on question {current_question_info['id']} of {len(ACE_QUESTIONS)}. DO NOT repeat questions or ask different questions."""
+Be conversational and avoid unnecessary repetition. Focus on moving the conversation forward."""
         
         try:
             # Prepare conversation for Claude - keep it focused on recent context
@@ -530,11 +551,11 @@ def is_help_request(user_input, current_question_id=None):
     """Check if user is asking for help, examples, or giving vague answers that need guidance"""
     # Direct help requests
     help_keywords = ["example", "help", "?", "what do you mean", "clarify", "explain", "i don't understand", 
-                     "show me", "can you give me", "not sure", "unclear", "confused"]
+                     "show me", "can you give me", "unclear", "confused"]
     
     # Vague responses that indicate they need guidance
-    vague_responses = ["it depends", "various ways", "different methods", "not sure", "maybe", "sometimes", 
-                       "varies", "different", "dunno", "idk", "i don't know"]
+    vague_responses = ["it depends", "various ways", "different methods", "maybe", "sometimes", 
+                       "varies", "dunno", "idk"]
     
     user_lower = user_input.lower().strip()
     
@@ -542,12 +563,18 @@ def is_help_request(user_input, current_question_id=None):
     if any(keyword in user_lower for keyword in help_keywords):
         return True
     
-    # Check for very short answers (might need more detail)
+    # Check for frustration/repetition indicators - these should advance the question
+    frustration_indicators = ["didn't i answer", "already answered", "i already", "already said", 
+                              "told you", "mentioned", "said that"]
+    if any(indicator in user_lower for indicator in frustration_indicators):
+        return False  # Don't treat as help request, advance the question
+    
+    # Only flag very short answers if they're truly uninformative (less than 5 chars and 1 word)
     words = user_input.strip().split()
-    if len(words) <= 2 and len(user_input.strip()) < 10:
+    if len(words) == 1 and len(user_input.strip()) < 5 and user_input.strip() not in ["one", "two", "three", "four", "five", "yes", "no"]:
         return True
         
-    # Check for vague responses
+    # Check for vague responses (but allow "not sure" as valid answer sometimes)
     if any(vague in user_lower for vague in vague_responses):
         return True
     
@@ -967,9 +994,12 @@ def main():
                     # Add user message to conversation
                     st.session_state.conversation.append({"role": "user", "content": user_input})
                     
+                    # Check if question is stuck (same question asked multiple times)
+                    question_already_answered = current_q["id"] in st.session_state.answers
+                    
                     # Store the answer immediately and advance question BEFORE AI response
-                    if not is_help_request(user_input, current_q["id"]):
-                        # Store answer
+                    if not is_help_request(user_input, current_q["id"]) or question_already_answered:
+                        # Store answer (overwrite if already exists)
                         st.session_state.answers[current_q["id"]] = user_input
                         update_realtime_summary(current_q["id"], user_input)
                         
