@@ -332,10 +332,15 @@ class SimpleEmailService:
             """
             msg.attach(MIMEText(body, 'html'))
             
-            # Attach summary file
+            # Attach summary file or session file
             attachment = MIMEApplication(summary_text.encode('utf-8'))
             company_name = user_info.get('company', 'Company').replace(' ', '_')
-            filename = f"ACE_Summary_{company_name}_{datetime.now().strftime('%Y%m%d')}.md"
+
+            if is_partial:
+                filename = f"ACE_Session_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
+            else:
+                filename = f"ACE_Summary_{company_name}_{datetime.now().strftime('%Y%m%d')}.md"
+
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
@@ -1225,29 +1230,20 @@ def main():
                     # Send email notification with partial progress
                     if email_service.is_configured():
                         try:
-                            # Create partial summary
-                            partial_summary = f"""# ACE Questionnaire - Partial Progress
-**Participant:** {st.session_state.user_info.get('name', 'Unknown')}
-**Company:** {st.session_state.user_info.get('company', 'Unknown')}
-**Email:** {st.session_state.user_info.get('email', 'Unknown')}
-**Date:** {datetime.now().strftime('%B %d, %Y %H:%M:%S')}
-**Progress:** {len(st.session_state.answers)}/23 questions answered
-
-Session data is attached. User can resume later by uploading the JSON file.
-"""
+                            # Send the JSON session file as attachment
                             email_result = email_service.send_completion_notification(
                                 st.session_state.user_info,
-                                partial_summary,
+                                session_json,
                                 is_partial=True
                             )
                             if email_result['success']:
-                                st.success(f"✅ Progress saved and email sent to team")
+                                st.success("Progress saved")
                             else:
-                                st.warning(f"⚠️ Progress saved locally, but email failed: {email_result['message']}")
+                                st.warning(f"Progress saved locally, but email failed: {email_result['message']}")
                         except Exception as e:
-                            st.warning(f"⚠️ Progress saved locally, but email error: {str(e)}")
+                            st.warning(f"Progress saved locally, but email error: {str(e)}")
                     else:
-                        st.info("📥 Progress saved locally (email not configured)")
+                        st.info("Progress saved locally (email not configured)")
 
                     # Provide download for user
                     st.download_button(
