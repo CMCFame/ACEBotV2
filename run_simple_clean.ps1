@@ -2,7 +2,7 @@
 Write-Host "Starting Simple ACE App..." -ForegroundColor Green
 
 # Install dependencies
-python -m pip install streamlit boto3
+python -m pip install streamlit boto3 google-api-python-client google-auth
 
 # Start the app
 Write-Host "Opening app at http://localhost:8520" -ForegroundColor Yellow

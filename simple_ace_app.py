@@ -9,6 +9,9 @@ import boto3
 import json
 import os
 import smtplib
+import re
+import random
+import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -32,6 +35,10 @@ load_env_file()
 # Configuration
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 BEDROCK_AWS_REGION = "us-east-1"
+
+# Google Drive Configuration
+GOOGLE_DRIVE_ENABLED = os.getenv('GOOGLE_DRIVE_ENABLED', 'true').lower() == 'true'
+GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '')  # Root folder for ACE responses
 
 # Complete ACE Questions - Reframed for conciseness and clarity
 ACE_QUESTIONS = [
@@ -266,19 +273,22 @@ class SimpleEmailService:
         if hasattr(st, 'secrets'):
             self.sender_email = st.secrets.get("EMAIL_SENDER", os.getenv("EMAIL_SENDER", ""))
             self.sender_password = st.secrets.get("EMAIL_PASSWORD", os.getenv("EMAIL_PASSWORD", ""))
-            self.recipient_email = st.secrets.get("EMAIL_RECIPIENT", os.getenv("EMAIL_RECIPIENT", ""))
+            recipient_emails_str = st.secrets.get("EMAIL_RECIPIENT", os.getenv("EMAIL_RECIPIENT", ""))
             self.smtp_server = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
             self.smtp_port = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", "587")))
         else:
             self.sender_email = os.getenv("EMAIL_SENDER", "")
             self.sender_password = os.getenv("EMAIL_PASSWORD", "")
-            self.recipient_email = os.getenv("EMAIL_RECIPIENT", "")
+            recipient_emails_str = os.getenv("EMAIL_RECIPIENT", "")
             self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
             self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+        # Parse multiple recipients (comma-separated)
+        self.recipient_emails = [email.strip() for email in recipient_emails_str.split(",")] if recipient_emails_str else []
     
     def is_configured(self):
         """Check if email service is properly configured"""
-        return bool(self.sender_email and self.sender_password and self.recipient_email)
+        return bool(self.sender_email and self.sender_password and self.recipient_emails)
     
     def send_completion_notification(self, user_info, summary_text):
         """Send email notification when questionnaire is completed"""
@@ -289,7 +299,7 @@ class SimpleEmailService:
             # Create message
             msg = MIMEMultipart()
             msg['From'] = self.sender_email
-            msg['To'] = self.recipient_email
+            msg['To'] = ", ".join(self.recipient_emails)
             msg['Subject'] = f"ACE Questionnaire Completed - {user_info.get('name', 'Unknown')} from {user_info.get('company', 'Unknown')}"
             
             # Create email body
@@ -324,12 +334,340 @@ class SimpleEmailService:
                 server.starttls()
                 server.login(self.sender_email, self.sender_password)
                 server.send_message(msg)
-            
-            return {"success": True, "message": f"Email notification sent to {self.recipient_email}"}
+
+            recipients_str = ", ".join(self.recipient_emails)
+            return {"success": True, "message": f"Email notification sent to {recipients_str}"}
         
         except Exception as e:
             return {"success": False, "message": f"Failed to send email: {str(e)}"}
 
+
+class GoogleDriveService:
+    """Silent Google Drive upload service for team access to responses"""
+
+    def __init__(self):
+        """Initialize Google Drive service with service account credentials"""
+        self.enabled = GOOGLE_DRIVE_ENABLED
+        self.service = None
+        self.completed_folder_id = None
+        self.incomplete_folder_id = None
+
+        if self.enabled:
+            self._init_drive_service()
+
+    def _init_drive_service(self):
+        """Initialize Google Drive API service"""
+        try:
+            # Try to import Google API libraries
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+            from io import StringIO
+
+            # Look for service account credentials
+            service_account_info = None
+
+            # Try multiple sources for service account credentials
+            if hasattr(st, 'secrets') and 'google_service_account' in st.secrets:
+                service_account_info = dict(st.secrets.google_service_account)
+            elif os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'):
+                import json
+                service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'))
+            elif os.path.exists('service_account.json'):
+                import json
+                with open('service_account.json', 'r') as f:
+                    service_account_info = json.load(f)
+
+            if not service_account_info:
+                print("DEBUG: No Google service account credentials found - Drive uploads disabled")
+                self.enabled = False
+                return
+
+            # Create credentials and service
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=['https://www.googleapis.com/auth/drive.file']
+            )
+
+            self.service = build('drive', 'v3', credentials=credentials)
+
+            # Setup folder structure
+            self._setup_folders()
+            print("DEBUG: Google Drive service initialized successfully")
+
+        except ImportError:
+            print("DEBUG: Google API libraries not available - Drive uploads disabled")
+            self.enabled = False
+        except Exception as e:
+            print(f"DEBUG: Failed to initialize Google Drive service: {e}")
+            self.enabled = False
+
+    def _setup_folders(self):
+        """Create or find the required folder structure"""
+        try:
+            if not self.service:
+                return
+
+            # Get or create root folder
+            root_folder_id = GOOGLE_DRIVE_FOLDER_ID
+            if not root_folder_id:
+                # Create ACE_Responses folder
+                root_folder = self._create_folder('ACE_Responses', None)
+                root_folder_id = root_folder['id']
+                print(f"DEBUG: Created root folder with ID: {root_folder_id}")
+                print(f"DEBUG: Add GOOGLE_DRIVE_FOLDER_ID={root_folder_id} to your .env file")
+
+            # Create or find subfolders
+            self.completed_folder_id = self._get_or_create_folder('completed', root_folder_id)
+            self.incomplete_folder_id = self._get_or_create_folder('incomplete responses', root_folder_id)
+
+            print(f"DEBUG: Folders ready - completed: {self.completed_folder_id}, incomplete: {self.incomplete_folder_id}")
+
+        except Exception as e:
+            print(f"DEBUG: Failed to setup Drive folders: {e}")
+            self.enabled = False
+
+    def _create_folder(self, name, parent_id):
+        """Create a new folder in Google Drive"""
+        folder_metadata = {
+            'name': name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        if parent_id:
+            folder_metadata['parents'] = [parent_id]
+
+        return self.service.files().create(body=folder_metadata, fields='id').execute()
+
+    def _get_or_create_folder(self, name, parent_id):
+        """Get existing folder or create new one"""
+        try:
+            # Search for existing folder
+            query = f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
+            if parent_id:
+                query += f" and '{parent_id}' in parents"
+
+            results = self.service.files().list(q=query, fields='files(id, name)').execute()
+            folders = results.get('files', [])
+
+            if folders:
+                return folders[0]['id']
+            else:
+                # Create new folder
+                folder = self._create_folder(name, parent_id)
+                return folder['id']
+        except Exception as e:
+            print(f"DEBUG: Error with folder '{name}': {e}")
+            return None
+
+    def _upload_text_file(self, content, filename, folder_id, mime_type='text/plain'):
+        """Upload text content as a file to Google Drive"""
+        try:
+            from googleapiclient.http import MediaIoBaseUpload
+            from io import BytesIO
+
+            # Convert content to bytes
+            file_content = BytesIO(content.encode('utf-8'))
+
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+
+            media = MediaIoBaseUpload(file_content, mimetype=mime_type, resumable=True)
+
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id,webViewLink'
+            ).execute()
+
+            return {
+                'success': True,
+                'file_id': file.get('id'),
+                'link': file.get('webViewLink'),
+                'filename': filename
+            }
+
+        except Exception as e:
+            print(f"DEBUG: Failed to upload {filename}: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def upload_completed_response(self, user_info, summary_text, transcript_csv, audit_json):
+        """Upload completed questionnaire response"""
+        if not self.enabled or not self.completed_folder_id:
+            return {'success': False, 'message': 'Google Drive not configured'}
+
+        try:
+            company_name = user_info.get('company', 'Company').replace(' ', '_').replace('/', '_')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+            base_filename = f"{company_name}_{timestamp}"
+
+            results = []
+
+            # Upload summary
+            result = self._upload_text_file(
+                summary_text,
+                f"{base_filename}_Summary.md",
+                self.completed_folder_id,
+                'text/markdown'
+            )
+            results.append(('Summary', result))
+
+            # Upload transcript
+            result = self._upload_text_file(
+                transcript_csv,
+                f"{base_filename}_Transcript.csv",
+                self.completed_folder_id,
+                'text/csv'
+            )
+            results.append(('Transcript', result))
+
+            # Upload audit
+            result = self._upload_text_file(
+                audit_json,
+                f"{base_filename}_Audit.json",
+                self.completed_folder_id,
+                'application/json'
+            )
+            results.append(('Audit', result))
+
+            successful_uploads = [r for r in results if r[1]['success']]
+
+            return {
+                'success': len(successful_uploads) > 0,
+                'message': f"Uploaded {len(successful_uploads)}/3 files to Google Drive",
+                'results': results
+            }
+
+        except Exception as e:
+            print(f"DEBUG: Failed to upload completed response: {e}")
+            return {'success': False, 'message': f'Upload failed: {str(e)}'}
+
+    def upload_partial_response(self, user_info, session_data):
+        """Upload partial questionnaire response"""
+        if not self.enabled or not self.incomplete_folder_id:
+            return {'success': False, 'message': 'Google Drive not configured'}
+
+        try:
+            company_name = user_info.get('company', 'Company').replace(' ', '_').replace('/', '_')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+            filename = f"{company_name}_{timestamp}_Partial.json"
+
+            result = self._upload_text_file(
+                session_data,
+                filename,
+                self.incomplete_folder_id,
+                'application/json'
+            )
+
+            return {
+                'success': result['success'],
+                'message': f"Partial response uploaded: {filename}" if result['success'] else f"Upload failed: {result.get('error', 'Unknown error')}"
+            }
+
+        except Exception as e:
+            print(f"DEBUG: Failed to upload partial response: {e}")
+            return {'success': False, 'message': f'Upload failed: {str(e)}'}
+
+
+def redact_pii(text):
+    """Redact common PII patterns (emails, phone numbers, SSNs)."""
+    if not isinstance(text, str):
+        return text
+    redacted = text
+    # Emails
+    redacted = re.sub(r"([A-Za-z0-9._%+-])([A-Za-z0-9._%+-]*)(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})",
+                      lambda m: m.group(1) + "***" + m.group(3), redacted)
+    # Phone numbers (simple): sequences of 10+ digits (with separators)
+    redacted = re.sub(r"(\+?\d[\d\s().-]{8,}\d)", lambda m: re.sub(r"\d", "x", m.group(1)), redacted)
+    # SSN-like (XXX-XX-XXXX)
+    redacted = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "xxx-xx-xxxx", redacted)
+    return redacted
+
+def generate_canned_ack():
+    """Return a brief, friendly acknowledgment."""
+    return random.choice(["Got it!", "Thanks!", "Perfect.", "Understood.", "Noted!", "Sounds good."])
+
+def get_acknowledgment(ai_service, conversation_history, fallback_only=False):
+    """Try to get a short acknowledgment from the LLM; fallback to canned."""
+    if fallback_only or not getattr(ai_service, "client", None):
+        return generate_canned_ack()
+    try:
+        system_prompt = (
+            "You are ACE. Respond with ONLY a brief acknowledgment word or phrase, "
+            "such as 'Got it!', 'Thanks!', or 'Perfect.' No additional text."
+        )
+        recent = conversation_history[-4:] if len(conversation_history) > 4 else conversation_history
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 10,
+            "temperature": 0.0,
+            "system": system_prompt,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in recent if m.get("role") in ["user", "assistant"]]
+        }
+        response = ai_service.client.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps(body)
+        )
+        response_body = json.loads(response.get('body').read())
+        text_content = ""
+        for block in response_body.get("content", []):
+            if block.get("type") == "text":
+                text_content += block.get("text", "")
+        ack = text_content.strip()
+        if not ack or len(ack) > 50:
+            return generate_canned_ack()
+        return ack
+    except Exception:
+        return generate_canned_ack()
+
+def compose_question_message(ack_text, question_text, example_text=None):
+    """Compose the assistant message that always ends with the exact canonical question."""
+    parts = []
+    if example_text:
+        parts.append(example_text)
+    if ack_text:
+        parts.append(ack_text)
+    parts.append(f"**{question_text}**")
+    return "\n\n".join(parts)
+
+def build_transcript_csv(audit_items):
+    """Build a CSV string from audit items without extra deps."""
+    headers = [
+        "turn_id", "timestamp", "question_id", "question_text", "user_input_raw", "user_input_redacted",
+        "advanced", "ack_source", "llm_error"
+    ]
+    lines = [",".join(headers)]
+    def csv_escape(val):
+        if val is None:
+            return ""
+        s = str(val)
+        if any(c in s for c in [",", "\n", '"']):
+            s = '"' + s.replace('"', '""') + '"'
+        return s
+    for item in audit_items:
+        row = [
+            csv_escape(item.get("turn_id")),
+            csv_escape(item.get("timestamp")),
+            csv_escape(item.get("question_id")),
+            csv_escape(item.get("question_text")),
+            csv_escape(item.get("user_input_raw")),
+            csv_escape(item.get("user_input_redacted")),
+            csv_escape(item.get("advanced")),
+            csv_escape(item.get("ack_source")),
+            csv_escape(item.get("llm_error")),
+        ]
+        lines.append(",".join(row))
+    return "\n".join(lines)
+
+def log_turn(event):
+    """Print structured JSON for each turn to the console."""
+    try:
+        print(json.dumps(event, separators=(",", ":")))
+    except Exception:
+        print(str(event))
 
 def init_session_state():
     """Initialize simple, reliable session state"""
@@ -353,6 +691,9 @@ def init_session_state():
     
     if 'summary_text' not in st.session_state:
         st.session_state.summary_text = ""
+    
+    if 'audit' not in st.session_state:
+        st.session_state.audit = []
 
 def get_current_question():
     """Get current question info"""
@@ -804,7 +1145,12 @@ def main():
     init_session_state()
     ai_service = SimpleAIService()
     email_service = SimpleEmailService()
+    drive_service = GoogleDriveService()
     
+    # Limited-mode banner if AI is unavailable
+    if not getattr(ai_service, "client", None):
+        st.warning("⚠️ Limited mode: AI acknowledgments unavailable. The questionnaire will continue with deterministic prompts.")
+
     # Compact Sidebar
     with st.sidebar:
         # Compact progress section
@@ -852,6 +1198,21 @@ def main():
             if st.button("📥 Save Progress"):
                 session_json = export_session_data()
                 if session_json:
+                    # Silent upload to Google Drive for team access
+                    if drive_service.enabled:
+                        try:
+                            upload_result = drive_service.upload_partial_response(
+                                st.session_state.user_info,
+                                session_json
+                            )
+                            if upload_result['success']:
+                                print(f"DEBUG: {upload_result['message']}")
+                            else:
+                                print(f"DEBUG: Partial upload failed: {upload_result['message']}")
+                        except Exception as e:
+                            print(f"DEBUG: Partial upload error: {e}")
+
+                    # Provide download for user
                     st.download_button(
                         label="📥 Download Session File",
                         data=session_json,
@@ -900,7 +1261,46 @@ def main():
                 file_name=f"ACE_Summary_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.md",
                 mime="text/markdown"
             )
+            # Download transcript (CSV)
+            if st.session_state.get("audit"):
+                csv_data = build_transcript_csv(st.session_state.audit)
+                st.download_button(
+                    label="📄 Download Transcript (CSV)",
+                    data=csv_data,
+                    file_name=f"ACE_Transcript_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+                # Download raw audit JSON
+                st.download_button(
+                    label="🧾 Download Audit (JSON)",
+                    data=json.dumps(st.session_state.audit, indent=2),
+                    file_name=f"ACE_Audit_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json"
+                )
             
+            # Silent upload to Google Drive for team access
+            if drive_service.enabled:
+                try:
+                    # Prepare all response files
+                    transcript_csv = build_transcript_csv(st.session_state.audit) if st.session_state.get("audit") else ""
+                    audit_json = json.dumps(st.session_state.audit, indent=2) if st.session_state.get("audit") else "{}"
+
+                    # Upload silently
+                    upload_result = drive_service.upload_completed_response(
+                        st.session_state.user_info,
+                        st.session_state.summary_text,
+                        transcript_csv,
+                        audit_json
+                    )
+
+                    if upload_result['success']:
+                        print(f"DEBUG: {upload_result['message']}")
+                    else:
+                        print(f"DEBUG: Drive upload failed: {upload_result['message']}")
+
+                except Exception as e:
+                    print(f"DEBUG: Drive upload error: {e}")
+
             # Email notification
             if email_service.is_configured():
                 if st.button("📧 Send Email Notification", type="secondary"):
@@ -993,46 +1393,64 @@ def main():
                 if user_input:
                     # Add user message to conversation
                     st.session_state.conversation.append({"role": "user", "content": user_input})
-                    
-                    # Check if question is stuck (same question asked multiple times)
-                    question_already_answered = current_q["id"] in st.session_state.answers
-                    
-                    # Store the answer immediately and advance question BEFORE AI response
-                    if not is_help_request(user_input, current_q["id"]) or question_already_answered:
-                        # Store answer (overwrite if already exists)
-                        st.session_state.answers[current_q["id"]] = user_input
-                        update_realtime_summary(current_q["id"], user_input)
-                        
-                        # Advance to next question
+
+                    # Prepare audit record
+                    turn_id = str(uuid.uuid4())
+                    user_redacted = redact_pii(user_input)
+                    advanced = False
+
+                    # Determine if this is help/example (do not advance)
+                    help_req = is_help_request(user_input, current_q["id"])
+                    if not help_req:
+                        # Record answer and advance deterministically
+                        st.session_state.answers[current_q["id"]] = user_redacted
+                        update_realtime_summary(current_q["id"], user_redacted)
                         if st.session_state.current_question == len(ACE_QUESTIONS):
-                            # Just completed the final question
                             st.session_state.completed = True
                         else:
-                            # Move to next question
-                            next_question = find_next_relevant_question(st.session_state.current_question + 1, st.session_state.answers)
-                            if next_question > len(ACE_QUESTIONS):
-                                st.session_state.completed = True
-                            else:
-                                st.session_state.current_question = next_question
-                    
-                    # Now get the current question for AI response (either same question for help, or next question)
-                    current_question_for_ai = get_current_question()
-                    if not current_question_for_ai:
-                        # Questionnaire is complete
-                        ai_response = "Thank you! That completes our questionnaire."
+                            st.session_state.current_question = find_next_relevant_question(
+                                st.session_state.current_question + 1, st.session_state.answers
+                            )
+                        advanced = True
+
+                    # Compose assistant message: acknowledgment + exact canonical question (same if help)
+                    current_for_prompt = get_current_question()
+                    ack = get_acknowledgment(ai_service, st.session_state.conversation, fallback_only=False)
+                    ack_source = "llm" if ack in ["Got it!", "Thanks!", "Perfect.", "Understood.", "Noted!", "Sounds good."] else "llm"
+                    # If we got one of our canned defaults due to failure, mark source accordingly
+                    if ack not in ["Got it!", "Thanks!", "Perfect.", "Understood.", "Noted!", "Sounds good."]:
+                        # Treat long/odd ack as failure and fallback
+                        ack = generate_canned_ack()
+                        ack_source = "canned"
+
+                    example_block = None
+                    if help_req and current_q:
+                        exs = get_question_examples(current_q['id'])
+                        if exs:
+                            example_block = f"*Example:* {exs[0]}\n\nTo continue with our question:"
+
+                    if st.session_state.completed or not current_for_prompt:
+                        assistant_msg = "Thank you! That completes our questionnaire."
                     else:
-                        # Get AI response for current question
-                        ai_response = ai_service.get_response(st.session_state.conversation, current_question_for_ai)
-                    
-                    # Check if system is unavailable
-                    if "❌ **System Unavailable**" in ai_response:
-                        # Don't progress, just show the error
-                        st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                        st.error("**System Unavailable** - Please resolve the AWS Bedrock access issue to continue.")
-                    else:
-                        # System is working - just add AI response to conversation
-                        st.session_state.conversation.append({"role": "assistant", "content": ai_response})
-                    
+                        assistant_msg = compose_question_message(ack, current_for_prompt['text'], example_block)
+
+                    st.session_state.conversation.append({"role": "assistant", "content": assistant_msg})
+
+                    # Audit + log
+                    audit_item = {
+                        "turn_id": turn_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "question_id": current_q["id"],
+                        "question_text": current_q["text"],
+                        "user_input_raw": user_input,
+                        "user_input_redacted": user_redacted,
+                        "advanced": advanced,
+                        "ack_source": ack_source,
+                        "llm_error": ack_source == "canned"
+                    }
+                    st.session_state.audit.append(audit_item)
+                    log_turn({"event": "turn", **audit_item})
+
                     st.rerun()
 
 if __name__ == "__main__":

@@ -34,3 +34,18 @@ previousver/utils/__init__.py
 previousver/utils/helpers.py
 nul
 __pycache__/simple_ace_app.cpython-313.pyc
+
+# Test files (development only)
+test_*.py
+run_tests.ps1
+
+# Google service account credentials
+service_account.json
+google_credentials.json
+
+# Session/response data (local testing)
+*.session.json
+ACE_Session_*.json
+ACE_Summary_*.md
+ACE_Transcript_*.csv
+ACE_Audit_*.json
