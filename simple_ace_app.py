@@ -290,7 +290,7 @@ class SimpleEmailService:
         """Check if email service is properly configured"""
         return bool(self.sender_email and self.sender_password and self.recipient_emails)
     
-    def send_completion_notification(self, user_info, summary_text, is_partial=False):
+    def send_completion_notification(self, user_info, summary_text, is_partial=False, answers_text=None):
         """Send email notification when questionnaire is completed or progress is saved"""
         if not self.is_configured():
             return {"success": False, "message": "Email not configured - notification not sent"}
@@ -331,7 +331,7 @@ class SimpleEmailService:
             </html>
             """
             msg.attach(MIMEText(body, 'html'))
-            
+
             # Attach summary file or session file
             attachment = MIMEApplication(summary_text.encode('utf-8'))
             company_name = user_info.get('company', 'Company').replace(' ', '_')
@@ -343,6 +343,13 @@ class SimpleEmailService:
 
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
+
+            # Attach plain text Q&A if provided (for partial saves)
+            if answers_text:
+                answers_attachment = MIMEApplication(answers_text.encode('utf-8'))
+                answers_filename = f"ACE_Answers_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+                answers_attachment.add_header('Content-Disposition', 'attachment', filename=answers_filename)
+                msg.attach(answers_attachment)
             
             # Send email
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
@@ -1230,11 +1237,27 @@ def main():
                     # Send email notification with partial progress
                     if email_service.is_configured():
                         try:
-                            # Send the JSON session file as attachment
+                            # Generate plain text Q&A summary
+                            answers_text = f"""ACE Questionnaire - Partial Responses
+Participant: {st.session_state.user_info.get('name', 'Unknown')}
+Company: {st.session_state.user_info.get('company', 'Unknown')}
+Date: {datetime.now().strftime('%B %d, %Y %H:%M:%S')}
+Progress: {len(st.session_state.answers)}/23 questions answered
+
+"""
+                            # Add each answered question
+                            for q_id in sorted(st.session_state.answers.keys()):
+                                question = next((q for q in ACE_QUESTIONS if q["id"] == q_id), None)
+                                if question:
+                                    answers_text += f"Q{q_id}: {question['text']}\n"
+                                    answers_text += f"A: {st.session_state.answers[q_id]}\n\n"
+
+                            # Send the JSON session file and plain text Q&A as attachments
                             email_result = email_service.send_completion_notification(
                                 st.session_state.user_info,
                                 session_json,
-                                is_partial=True
+                                is_partial=True,
+                                answers_text=answers_text
                             )
                             if email_result['success']:
                                 st.success("Progress saved")
