@@ -290,33 +290,43 @@ class SimpleEmailService:
         """Check if email service is properly configured"""
         return bool(self.sender_email and self.sender_password and self.recipient_emails)
     
-    def send_completion_notification(self, user_info, summary_text):
-        """Send email notification when questionnaire is completed"""
+    def send_completion_notification(self, user_info, summary_text, is_partial=False):
+        """Send email notification when questionnaire is completed or progress is saved"""
         if not self.is_configured():
             return {"success": False, "message": "Email not configured - notification not sent"}
-        
+
         try:
+            # Determine status and subject based on completion
+            if is_partial:
+                status_text = "⏸️ In Progress"
+                subject_prefix = "ACE Questionnaire - Progress Saved"
+                next_steps = "The user has saved their progress. They can resume later by uploading the session file."
+            else:
+                status_text = "✅ Completed"
+                subject_prefix = "ACE Questionnaire Completed"
+                next_steps = "The completed questionnaire responses are attached as a summary file. Please review the responses to configure ARCOS according to the documented callout process."
+
             # Create message
             msg = MIMEMultipart()
             msg['From'] = self.sender_email
             msg['To'] = ", ".join(self.recipient_emails)
-            msg['Subject'] = f"ACE Questionnaire Completed - {user_info.get('name', 'Unknown')} from {user_info.get('company', 'Unknown')}"
-            
+            msg['Subject'] = f"{subject_prefix} - {user_info.get('name', 'Unknown')} from {user_info.get('company', 'Unknown')}"
+
             # Create email body
             body = f"""
             <html>
             <body>
-            <h2>ACE Questionnaire Completed</h2>
-            <p><strong>Status:</strong> ✅ Completed</p>
+            <h2>ACE Questionnaire - {status_text}</h2>
+            <p><strong>Status:</strong> {status_text}</p>
             <p><strong>User:</strong> {user_info.get('name', 'Unknown')}</p>
             <p><strong>Company:</strong> {user_info.get('company', 'Unknown')}</p>
             <p><strong>Email:</strong> {user_info.get('email', 'Unknown')}</p>
             <p><strong>Utility Type:</strong> {user_info.get('utility_type', 'Unknown')}</p>
             <p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p><strong>Questions Answered:</strong> {len(st.session_state.answers)}/23</p>
-            
+
             <h3>Next Steps</h3>
-            <p>The completed questionnaire responses are attached as a summary file. Please review the responses to configure ARCOS according to the documented callout process.</p>
+            <p>{next_steps}</p>
             </body>
             </html>
             """
@@ -1190,10 +1200,10 @@ def main():
         
         st.markdown("---")
         
-        # Save/Resume functionality  
+        # Save/Resume functionality
         if st.session_state.started:
             st.markdown("### 💾 Save Progress")
-            
+
             # Save progress
             if st.button("📥 Save Progress"):
                 session_json = export_session_data()
@@ -1211,6 +1221,33 @@ def main():
                                 print(f"DEBUG: Partial upload failed: {upload_result['message']}")
                         except Exception as e:
                             print(f"DEBUG: Partial upload error: {e}")
+
+                    # Send email notification with partial progress
+                    if email_service.is_configured():
+                        try:
+                            # Create partial summary
+                            partial_summary = f"""# ACE Questionnaire - Partial Progress
+**Participant:** {st.session_state.user_info.get('name', 'Unknown')}
+**Company:** {st.session_state.user_info.get('company', 'Unknown')}
+**Email:** {st.session_state.user_info.get('email', 'Unknown')}
+**Date:** {datetime.now().strftime('%B %d, %Y %H:%M:%S')}
+**Progress:** {len(st.session_state.answers)}/23 questions answered
+
+Session data is attached. User can resume later by uploading the JSON file.
+"""
+                            email_result = email_service.send_completion_notification(
+                                st.session_state.user_info,
+                                partial_summary,
+                                is_partial=True
+                            )
+                            if email_result['success']:
+                                st.success(f"✅ Progress saved and email sent to team")
+                            else:
+                                st.warning(f"⚠️ Progress saved locally, but email failed: {email_result['message']}")
+                        except Exception as e:
+                            st.warning(f"⚠️ Progress saved locally, but email error: {str(e)}")
+                    else:
+                        st.info("📥 Progress saved locally (email not configured)")
 
                     # Provide download for user
                     st.download_button(
