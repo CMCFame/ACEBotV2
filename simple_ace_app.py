@@ -36,9 +36,6 @@ load_env_file()
 BEDROCK_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 BEDROCK_AWS_REGION = "us-east-1"
 
-# Google Drive Configuration
-GOOGLE_DRIVE_ENABLED = os.getenv('GOOGLE_DRIVE_ENABLED', 'true').lower() == 'true'
-GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '')  # Root folder for ACE responses
 
 # Complete ACE Questions - Reframed for conciseness and clarity
 ACE_QUESTIONS = [
@@ -364,232 +361,6 @@ class SimpleEmailService:
             return {"success": False, "message": f"Failed to send email: {str(e)}"}
 
 
-class GoogleDriveService:
-    """Silent Google Drive upload service for team access to responses"""
-
-    def __init__(self):
-        """Initialize Google Drive service with service account credentials"""
-        self.enabled = GOOGLE_DRIVE_ENABLED
-        self.service = None
-        self.completed_folder_id = None
-        self.incomplete_folder_id = None
-
-        if self.enabled:
-            self._init_drive_service()
-
-    def _init_drive_service(self):
-        """Initialize Google Drive API service"""
-        try:
-            # Try to import Google API libraries
-            from google.oauth2 import service_account
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
-            from io import StringIO
-
-            # Look for service account credentials
-            service_account_info = None
-
-            # Try multiple sources for service account credentials
-            if hasattr(st, 'secrets') and 'google_service_account' in st.secrets:
-                service_account_info = dict(st.secrets.google_service_account)
-            elif os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'):
-                import json
-                service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'))
-            elif os.path.exists('service_account.json'):
-                import json
-                with open('service_account.json', 'r') as f:
-                    service_account_info = json.load(f)
-
-            if not service_account_info:
-                print("DEBUG: No Google service account credentials found - Drive uploads disabled")
-                self.enabled = False
-                return
-
-            # Create credentials and service
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=['https://www.googleapis.com/auth/drive.file']
-            )
-
-            self.service = build('drive', 'v3', credentials=credentials)
-
-            # Setup folder structure
-            self._setup_folders()
-            print("DEBUG: Google Drive service initialized successfully")
-
-        except ImportError:
-            print("DEBUG: Google API libraries not available - Drive uploads disabled")
-            self.enabled = False
-        except Exception as e:
-            print(f"DEBUG: Failed to initialize Google Drive service: {e}")
-            self.enabled = False
-
-    def _setup_folders(self):
-        """Create or find the required folder structure"""
-        try:
-            if not self.service:
-                return
-
-            # Get or create root folder
-            root_folder_id = GOOGLE_DRIVE_FOLDER_ID
-            if not root_folder_id:
-                # Create ACE_Responses folder
-                root_folder = self._create_folder('ACE_Responses', None)
-                root_folder_id = root_folder['id']
-                print(f"DEBUG: Created root folder with ID: {root_folder_id}")
-                print(f"DEBUG: Add GOOGLE_DRIVE_FOLDER_ID={root_folder_id} to your .env file")
-
-            # Create or find subfolders
-            self.completed_folder_id = self._get_or_create_folder('completed', root_folder_id)
-            self.incomplete_folder_id = self._get_or_create_folder('incomplete responses', root_folder_id)
-
-            print(f"DEBUG: Folders ready - completed: {self.completed_folder_id}, incomplete: {self.incomplete_folder_id}")
-
-        except Exception as e:
-            print(f"DEBUG: Failed to setup Drive folders: {e}")
-            self.enabled = False
-
-    def _create_folder(self, name, parent_id):
-        """Create a new folder in Google Drive"""
-        folder_metadata = {
-            'name': name,
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
-        if parent_id:
-            folder_metadata['parents'] = [parent_id]
-
-        return self.service.files().create(body=folder_metadata, fields='id').execute()
-
-    def _get_or_create_folder(self, name, parent_id):
-        """Get existing folder or create new one"""
-        try:
-            # Search for existing folder
-            query = f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
-            if parent_id:
-                query += f" and '{parent_id}' in parents"
-
-            results = self.service.files().list(q=query, fields='files(id, name)').execute()
-            folders = results.get('files', [])
-
-            if folders:
-                return folders[0]['id']
-            else:
-                # Create new folder
-                folder = self._create_folder(name, parent_id)
-                return folder['id']
-        except Exception as e:
-            print(f"DEBUG: Error with folder '{name}': {e}")
-            return None
-
-    def _upload_text_file(self, content, filename, folder_id, mime_type='text/plain'):
-        """Upload text content as a file to Google Drive"""
-        try:
-            from googleapiclient.http import MediaIoBaseUpload
-            from io import BytesIO
-
-            # Convert content to bytes
-            file_content = BytesIO(content.encode('utf-8'))
-
-            file_metadata = {
-                'name': filename,
-                'parents': [folder_id]
-            }
-
-            media = MediaIoBaseUpload(file_content, mimetype=mime_type, resumable=True)
-
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id,webViewLink'
-            ).execute()
-
-            return {
-                'success': True,
-                'file_id': file.get('id'),
-                'link': file.get('webViewLink'),
-                'filename': filename
-            }
-
-        except Exception as e:
-            print(f"DEBUG: Failed to upload {filename}: {e}")
-            return {'success': False, 'error': str(e)}
-
-    def upload_completed_response(self, user_info, summary_text, transcript_csv, audit_json):
-        """Upload completed questionnaire response"""
-        if not self.enabled or not self.completed_folder_id:
-            return {'success': False, 'message': 'Google Drive not configured'}
-
-        try:
-            company_name = user_info.get('company', 'Company').replace(' ', '_').replace('/', '_')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            base_filename = f"{company_name}_{timestamp}"
-
-            results = []
-
-            # Upload summary
-            result = self._upload_text_file(
-                summary_text,
-                f"{base_filename}_Summary.md",
-                self.completed_folder_id,
-                'text/markdown'
-            )
-            results.append(('Summary', result))
-
-            # Upload transcript
-            result = self._upload_text_file(
-                transcript_csv,
-                f"{base_filename}_Transcript.csv",
-                self.completed_folder_id,
-                'text/csv'
-            )
-            results.append(('Transcript', result))
-
-            # Upload audit
-            result = self._upload_text_file(
-                audit_json,
-                f"{base_filename}_Audit.json",
-                self.completed_folder_id,
-                'application/json'
-            )
-            results.append(('Audit', result))
-
-            successful_uploads = [r for r in results if r[1]['success']]
-
-            return {
-                'success': len(successful_uploads) > 0,
-                'message': f"Uploaded {len(successful_uploads)}/3 files to Google Drive",
-                'results': results
-            }
-
-        except Exception as e:
-            print(f"DEBUG: Failed to upload completed response: {e}")
-            return {'success': False, 'message': f'Upload failed: {str(e)}'}
-
-    def upload_partial_response(self, user_info, session_data):
-        """Upload partial questionnaire response"""
-        if not self.enabled or not self.incomplete_folder_id:
-            return {'success': False, 'message': 'Google Drive not configured'}
-
-        try:
-            company_name = user_info.get('company', 'Company').replace(' ', '_').replace('/', '_')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            filename = f"{company_name}_{timestamp}_Partial.json"
-
-            result = self._upload_text_file(
-                session_data,
-                filename,
-                self.incomplete_folder_id,
-                'application/json'
-            )
-
-            return {
-                'success': result['success'],
-                'message': f"Partial response uploaded: {filename}" if result['success'] else f"Upload failed: {result.get('error', 'Unknown error')}"
-            }
-
-        except Exception as e:
-            print(f"DEBUG: Failed to upload partial response: {e}")
-            return {'success': False, 'message': f'Upload failed: {str(e)}'}
 
 
 def redact_pii(text):
@@ -1167,7 +938,6 @@ def main():
     init_session_state()
     ai_service = SimpleAIService()
     email_service = SimpleEmailService()
-    drive_service = GoogleDriveService()
     
     # Limited-mode banner if AI is unavailable
     if not getattr(ai_service, "client", None):
@@ -1220,20 +990,6 @@ def main():
             if st.button("📥 Save Progress"):
                 session_json = export_session_data()
                 if session_json:
-                    # Silent upload to Google Drive for team access
-                    if drive_service.enabled:
-                        try:
-                            upload_result = drive_service.upload_partial_response(
-                                st.session_state.user_info,
-                                session_json
-                            )
-                            if upload_result['success']:
-                                print(f"DEBUG: {upload_result['message']}")
-                            else:
-                                print(f"DEBUG: Partial upload failed: {upload_result['message']}")
-                        except Exception as e:
-                            print(f"DEBUG: Partial upload error: {e}")
-
                     # Send email notification with partial progress
                     if email_service.is_configured():
                         try:
@@ -1333,29 +1089,6 @@ Progress: {len(st.session_state.answers)}/23 questions answered
                     file_name=f"ACE_Audit_{st.session_state.user_info.get('company', 'Company')}_{datetime.now().strftime('%Y%m%d')}.json",
                     mime="application/json"
                 )
-            
-            # Silent upload to Google Drive for team access
-            if drive_service.enabled:
-                try:
-                    # Prepare all response files
-                    transcript_csv = build_transcript_csv(st.session_state.audit) if st.session_state.get("audit") else ""
-                    audit_json = json.dumps(st.session_state.audit, indent=2) if st.session_state.get("audit") else "{}"
-
-                    # Upload silently
-                    upload_result = drive_service.upload_completed_response(
-                        st.session_state.user_info,
-                        st.session_state.summary_text,
-                        transcript_csv,
-                        audit_json
-                    )
-
-                    if upload_result['success']:
-                        print(f"DEBUG: {upload_result['message']}")
-                    else:
-                        print(f"DEBUG: Drive upload failed: {upload_result['message']}")
-
-                except Exception as e:
-                    print(f"DEBUG: Drive upload error: {e}")
 
             # Email notification
             if email_service.is_configured():
