@@ -17,14 +17,19 @@ Una aplicación Streamlit para guiar a los usuarios a través del cuestionario A
    cd ACEBotV2
    ```
 
-2. **Configura variables de entorno:**
+2. **Verifica la configuración de Docker:**
+   ```powershell
+   .\test_docker.ps1
+   ```
+
+3. **Configura variables de entorno:**
    Copia el archivo de ejemplo y edítalo:
    ```bash
    cp docker-env-example.txt .env
    # Edita .env con tus credenciales de AWS y configuración opcional
    ```
 
-3. **Ejecuta con Docker:**
+4. **Ejecuta con Docker:**
    ```powershell
    .\run_docker.ps1
    ```
@@ -33,7 +38,7 @@ Una aplicación Streamlit para guiar a los usuarios a través del cuestionario A
    docker-compose up --build
    ```
 
-4. **Accede a la aplicación:**
+5. **Accede a la aplicación:**
    Abre http://localhost:8520 en tu navegador
 
 ### 💻 Ejecutar Localmente (Alternativo)
@@ -105,6 +110,7 @@ ACEBotV2/
 ├── simple_ace_app.py          # 🏠 Aplicación principal
 ├── run_simple_clean.ps1       # 🚀 Script de ejecución local
 ├── run_docker.ps1             # 🚢 Script de ejecución con Docker
+├── test_docker.ps1            # ✅ Script de validación de Docker
 ├── run_tests.ps1              # 🧪 Script de tests
 ├── requirements.txt           # 📦 Dependencias Python
 ├── Dockerfile                 # 🐳 Configuración de Docker
