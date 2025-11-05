@@ -5,11 +5,11 @@ Una aplicación Streamlit para guiar a los usuarios a través del cuestionario A
 ## 🚀 Inicio Rápido
 
 ### Prerrequisitos
-- Python 3.8+
+- Docker y Docker Compose
 - AWS Account con acceso a Bedrock
 - (Opcional) Configuración de email para notificaciones
 
-### Instalación
+### 🚢 Ejecutar con Docker (Recomendado)
 
 1. **Clona el repositorio:**
    ```bash
@@ -17,12 +17,40 @@ Una aplicación Streamlit para guiar a los usuarios a través del cuestionario A
    cd ACEBotV2
    ```
 
-2. **Instala dependencias:**
+2. **Configura variables de entorno:**
+   Copia el archivo de ejemplo y edítalo:
    ```bash
-   pip install -r requirements.txt
+   cp docker-env-example.txt .env
+   # Edita .env con tus credenciales de AWS y configuración opcional
    ```
 
-3. **Configura variables de entorno:**
+3. **Ejecuta con Docker:**
+   ```powershell
+   .\run_docker.ps1
+   ```
+   O directamente:
+   ```bash
+   docker-compose up --build
+   ```
+
+4. **Accede a la aplicación:**
+   Abre http://localhost:8520 en tu navegador
+
+### 💻 Ejecutar Localmente (Alternativo)
+
+#### Prerrequisitos
+- Python 3.8+
+- AWS Account con acceso a Bedrock
+
+#### Instalación Local
+
+1. **Instala dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   pip install streamlit boto3 google-api-python-client google-auth
+   ```
+
+2. **Configura variables de entorno:**
    Crea un archivo `.env` en el directorio raíz con:
    ```env
    AWS_ACCESS_KEY_ID=your_aws_access_key
@@ -37,17 +65,14 @@ Una aplicación Streamlit para guiar a los usuarios a través del cuestionario A
    SMTP_PORT=587
    ```
 
-### Ejecutar la Aplicación
-
-**Opción recomendada (Windows):**
-```powershell
-.\run_simple_clean.ps1
-```
-
-**Opción alternativa:**
-```bash
-streamlit run simple_ace_app.py --server.port 8520
-```
+3. **Ejecuta la aplicación:**
+   ```powershell
+   .\run_simple_clean.ps1
+   ```
+   O:
+   ```bash
+   streamlit run simple_ace_app.py --server.port 8520
+   ```
 
 ## 📋 Características
 
@@ -78,9 +103,13 @@ Para ejecutar los tests:
 ```
 ACEBotV2/
 ├── simple_ace_app.py          # 🏠 Aplicación principal
-├── run_simple_clean.ps1       # 🚀 Script de ejecución
+├── run_simple_clean.ps1       # 🚀 Script de ejecución local
+├── run_docker.ps1             # 🚢 Script de ejecución con Docker
 ├── run_tests.ps1              # 🧪 Script de tests
-├── requirements.txt           # 📦 Dependencias
+├── requirements.txt           # 📦 Dependencias Python
+├── Dockerfile                 # 🐳 Configuración de Docker
+├── docker-compose.yml         # 🐳 Orquestación de contenedores
+├── docker-env-example.txt     # 📝 Ejemplo de variables de entorno
 ├── README.md                  # 📖 Esta documentación
 ├── assets/
 │   └── style.css             # 🎨 Estilos
@@ -89,6 +118,46 @@ ACEBotV2/
 │   └── questions.txt         # ❓ Conjunto de preguntas
 ├── examples/                 # 📝 Ejemplos de conversación
 └── archive/                  # 🗂️ Código y archivos deprecated
+```
+
+## 🐳 Docker
+
+### Beneficios de usar Docker
+
+- **Entorno consistente**: La aplicación se ejecuta igual en cualquier sistema con Docker
+- **Aislamiento**: No interfiere con otras instalaciones de Python en tu sistema
+- **Fácil distribución**: Comparte la aplicación como una imagen Docker
+- **Escalabilidad**: Fácil de desplegar en servidores o servicios en la nube
+
+### Comandos útiles de Docker
+
+```bash
+# Construir la imagen
+docker-compose build
+
+# Ejecutar en segundo plano
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f acebot
+
+# Detener la aplicación
+docker-compose down
+
+# Limpiar imágenes no utilizadas
+docker system prune
+```
+
+### Configuración de Producción
+
+Para despliegue en producción, configura las variables de entorno apropiadas en tu servidor:
+
+```bash
+export AWS_ACCESS_KEY_ID=your_prod_key
+export AWS_SECRET_ACCESS_KEY=your_prod_secret
+# ... otras variables
+
+docker-compose -f docker-compose.yml up -d
 ```
 
 ## 🤝 Contribución

@@ -1,0 +1,18 @@
+# AWS Bedrock Configuration (Required)
+# Get these from your AWS IAM user with Bedrock permissions
+AWS_ACCESS_KEY_ID=your_aws_access_key_here
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
+AWS_DEFAULT_REGION=us-east-1
+
+# Email Configuration (Optional)
+# For Gmail, use an App Password instead of your regular password
+EMAIL_SENDER=your_email@gmail.com
+EMAIL_PASSWORD=your_app_password_here
+EMAIL_RECIPIENT=admin@yourcompany.com
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+
+# Google Drive Configuration (Optional - Currently disabled)
+# GOOGLE_DRIVE_ENABLED=false
+# GOOGLE_DRIVE_FOLDER_ID=your_drive_folder_id_here
+# GOOGLE_SERVICE_ACCOUNT_JSON=path_to_service_account_json
